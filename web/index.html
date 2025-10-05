@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Transcripción de Audio con IA</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <img src="logo.png" alt="Logo" onerror="this.style.display='none'">
+                <h1>Sistema de Transcripción de Audio</h1>
+            </div>
+            <nav class="nav-tabs">
+                <button class="nav-tab active" data-tab="grabacion">
+                    <span>📹</span> Grabación
+                </button>
+                <button class="nav-tab" data-tab="archivo">
+                    <span>📁</span> Subir Archivo
+                </button>
+                <button class="nav-tab" data-tab="resultados">
+                    <span>📄</span> Resultados
+                </button>
+            </nav>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Tab: Grabación -->
+            <div class="tab-content active" id="grabacion">
+                <div class="card">
+                    <h2>¡Hola! Soy tu asistente virtual de reconocimiento de voz</h2>
+                    <p class="subtitle">Haga clic en el botón "Iniciar grabación" para empezar a grabar el audio. Si desea detenerlo, vuelva a presionar el botón.</p>
+
+                    <div class="recording-section">
+                        <div class="timer-display">
+                            <label>Tiempo de grabación</label>
+                            <div class="timer" id="timer">00:00:00</div>
+                        </div>
+
+                        <div class="controls">
+                            <button class="btn-control btn-stop" id="btnStop" disabled>
+                                <span class="icon">⏹</span>
+                                Detener
+                            </button>
+                            <button class="btn-control btn-record" id="btnRecord">
+                                <span class="icon">🎙️</span>
+                                Iniciar grabación
+                            </button>
+                        </div>
+
+                        <div class="audio-visualizer" id="visualizer">
+                            <canvas id="waveform"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3>Configuración de Transcripción</h3>
+                        <div class="settings-grid">
+                            <div class="setting-item">
+                                <label for="language">Idioma:</label>
+                                <select id="language">
+                                    <option value="es" selected>Español</option>
+                                    <option value="en">Inglés</option>
+                                    <option value="fr">Francés</option>
+                                    <option value="de">Alemán</option>
+                                    <option value="it">Italiano</option>
+                                    <option value="pt">Portugués</option>
+                                </select>
+                            </div>
+                            <div class="setting-item">
+                                <label for="minSpeakers">Mín. Hablantes:</label>
+                                <input type="number" id="minSpeakers" min="1" max="10" value="2">
+                            </div>
+                            <div class="setting-item">
+                                <label for="maxSpeakers">Máx. Hablantes:</label>
+                                <input type="number" id="maxSpeakers" min="1" max="10" value="5">
+                            </div>
+                            <div class="setting-item">
+                                <label for="outputFormat">Formato de Salida:</label>
+                                <select id="outputFormat">
+                                    <option value="text" selected>Texto Simple</option>
+                                    <option value="detailed">Detallado (con timestamps)</option>
+                                    <option value="srt">SRT (Subtítulos)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab: Subir Archivo -->
+            <div class="tab-content" id="archivo">
+                <div class="card">
+                    <h2>Subir Archivo de Audio o Video</h2>
+                    <p class="subtitle">Seleccione un archivo de audio (MP3, WAV, M4A) o video (MP4, AVI, MOV, MKV) para transcribir</p>
+
+                    <div class="upload-section">
+                        <div class="upload-area" id="uploadArea">
+                            <div class="upload-icon">📁</div>
+                            <p>Arrastra y suelta tu archivo aquí</p>
+                            <p class="upload-hint">o</p>
+                            <button class="btn-upload" onclick="document.getElementById('fileInput').click()">
+                                Seleccionar Archivo
+                            </button>
+                            <input type="file" id="fileInput" accept="audio/*,video/*" hidden>
+                            <p class="file-info" id="fileInfo"></p>
+                            <div id="mediaPreview" style="margin-top: 1rem;"></div>
+                        </div>
+
+                        <div class="settings-section">
+                            <h3>Configuración de Transcripción</h3>
+                            <div class="settings-grid">
+                                <div class="setting-item">
+                                    <label for="fileLanguage">Idioma:</label>
+                                    <select id="fileLanguage">
+                                        <option value="es" selected>Español</option>
+                                        <option value="en">Inglés</option>
+                                        <option value="fr">Francés</option>
+                                        <option value="de">Alemán</option>
+                                        <option value="it">Italiano</option>
+                                        <option value="pt">Portugués</option>
+                                    </select>
+                                </div>
+                                <div class="setting-item">
+                                    <label for="fileMinSpeakers">Mín. Hablantes:</label>
+                                    <input type="number" id="fileMinSpeakers" min="1" max="10" value="2">
+                                </div>
+                                <div class="setting-item">
+                                    <label for="fileMaxSpeakers">Máx. Hablantes:</label>
+                                    <input type="number" id="fileMaxSpeakers" min="1" max="10" value="5">
+                                </div>
+                                <div class="setting-item">
+                                    <label for="fileOutputFormat">Formato de Salida:</label>
+                                    <select id="fileOutputFormat">
+                                        <option value="text" selected>Texto Simple</option>
+                                        <option value="detailed">Detallado (con timestamps)</option>
+                                        <option value="srt">SRT (Subtítulos)</option>
+                                    </select>
+                                </div>
+                                <div class="setting-item" id="videoBitrateContainer" style="display: none;">
+                                    <label for="videoBitrate">Calidad Audio (Video):</label>
+                                    <select id="videoBitrate">
+                                        <option value="128k">128 kbps</option>
+                                        <option value="192k" selected>192 kbps</option>
+                                        <option value="256k">256 kbps</option>
+                                        <option value="320k">320 kbps</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button class="btn-process" id="btnProcess" disabled>
+                            Procesar Audio
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab: Resultados -->
+            <div class="tab-content" id="resultados">
+                <div class="card">
+                    <div class="result-header">
+                        <h2>Resultado</h2>
+                        <div class="result-actions">
+                            <button class="btn-action" id="btnCopy">
+                                📋 Copiar
+                            </button>
+                            <button class="btn-action" id="btnDownload">
+                                💾 Descargar
+                            </button>
+                            <button class="btn-action" id="btnClear">
+                                🗑️ Limpiar
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="result-content" id="resultContent">
+                        <p class="empty-state">En esta sección se mostrará el texto transcrito...</p>
+                    </div>
+
+                    <div class="statistics" id="statistics" style="display: none;">
+                        <h3>Estadísticas de Hablantes</h3>
+                        <div id="speakerStats"></div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Loading Overlay -->
+        <div class="loading-overlay" id="loadingOverlay">
+            <div class="spinner"></div>
+            <p id="loadingMessage">Procesando audio...</p>
+        </div>
+
+        <!-- Toast Notifications -->
+        <div class="toast-container" id="toastContainer"></div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+# Core dependencies
+fastapi>=0.104.1
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+pydantic>=2.5.0
+
+# Audio processing and ML - usar versiones precompiladas
+openai-whisper
+torch>=2.1.0
+torchaudio>=2.1.0
+
+# Audio file handling
+pydub>=0.25.1
+soundfile>=0.12.1
+librosa>=0.10.1
+av>=15.0.0  # PyAV para pyannote.audio (decodificación de audio)
+
+# Pyannote después de las dependencias
+pyannote.audio>=3.1.1
+
+# Utilities
+python-dotenv>=1.0.0
+aiofiles>=23.2.1
+requests>=2.31.0
+
+# Optimization for production (opcional)
+# gunicorn>=21.2.0  # Solo para Linux/Mac

@@ -1,0 +1,158 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Entornos virtuales
+venv/
+ENV/
+env/
+.venv
+venv_old/
+env_backup/
+.virtualenv
+
+# IDE y Editores
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+*.code-workspace
+.vs/
+
+# Archivos temporales y procesados
+uploads/*
+!uploads/.gitkeep
+*.log
+*.tmp
+*.temp
+*.bak
+*.cache
+
+# Archivos de configuración sensibles
+.env
+*.key
+*.pem
+secrets.json
+
+# Modelos descargados (muy pesados para git)
+models/
+*.pt
+*.pth
+*.onnx
+*.bin
+*.safetensors
+
+# Archivos de audio/video de prueba
+test_*.mp3
+test_*.wav
+test_*.mp4
+test_*.avi
+sample_*.*
+example_*.*
+demo_*.*
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# Pytest y Coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pylint
+.pylint.d/
+
+# PyCharm
+.idea/
+
+# Unit test / coverage reports
+nosetests.xml
+test-results/
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# IPython
+profile_default/
+ipython_config.py
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env.local
+.env.*.local
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# pytype static type analyzer
+.pytype/
+
+# profiling data
+.prof
+
+# Archivos de sistema Windows
+desktop.ini
+$RECYCLE.BIN/
+
+# Archivos de sistema macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Archivos de sistema Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
