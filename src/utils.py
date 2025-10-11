@@ -8,6 +8,39 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def renumber_speakers(diarization_segments: List[Dict]) -> List[Dict]:
+    """
+    Renumera los hablantes para que comiencen desde SPEAKER_01 en lugar de SPEAKER_00.
+    
+    Args:
+        diarization_segments: Lista de segmentos con nombres de hablantes originales
+    
+    Returns:
+        Lista de segmentos con hablantes renumerados (SPEAKER_01, SPEAKER_02, etc.)
+    """
+    # Obtener todos los hablantes únicos en orden de aparición
+    unique_speakers = []
+    for seg in diarization_segments:
+        speaker = seg["speaker"]
+        if speaker not in unique_speakers:
+            unique_speakers.append(speaker)
+    
+    # Crear mapeo de nombres antiguos a nuevos (comenzando desde 01)
+    speaker_mapping = {}
+    for idx, old_speaker in enumerate(unique_speakers, start=1):
+        speaker_mapping[old_speaker] = f"SPEAKER_{idx:02d}"
+    
+    # Aplicar el mapeo a todos los segmentos
+    renumbered_segments = []
+    for seg in diarization_segments:
+        new_seg = seg.copy()
+        new_seg["speaker"] = speaker_mapping[seg["speaker"]]
+        renumbered_segments.append(new_seg)
+    
+    logger.info(f"Hablantes renumerados: {speaker_mapping}")
+    return renumbered_segments
+
+
 def align_transcription_with_diarization(
     transcription_segments: List[Dict],
     diarization_segments: List[Dict]
@@ -22,6 +55,9 @@ def align_transcription_with_diarization(
     Returns:
         Lista de segmentos combinados con texto y hablante
     """
+    # Renombrar hablantes para que comiencen desde SPEAKER_01
+    diarization_segments = renumber_speakers(diarization_segments)
+    
     aligned_segments = []
     
     for trans_seg in transcription_segments:

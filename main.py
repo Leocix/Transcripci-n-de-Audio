@@ -210,7 +210,6 @@ async def transcribe_audio(
         )
     
     finally:
-         archivo temporal
         if os.path.exists(temp_path):
             try:
                 os.remove(temp_path)
@@ -241,7 +240,6 @@ async def transcribe_with_diarization(
     Returns:
         Transcripción con identificación de hablantes
     """
-     HF_TOKEN
     if not HF_TOKEN:
         logger.error("HF_TOKEN no configurado")
         raise HTTPException(
@@ -259,7 +257,6 @@ async def transcribe_with_diarization(
             detail=f"Error al leer el archivo: {str(e)}"
         )
     
-     tamaño
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=413,
@@ -272,7 +269,6 @@ async def transcribe_with_diarization(
             detail="El archivo está vacío"
         )
     
-     archivo
     job_id = str(uuid.uuid4())
     file_extension = os.path.splitext(file.filename)[1] if file.filename else ".webm"
     
@@ -383,14 +379,12 @@ async def convert_video_to_audio(
     Returns:
         Archivo MP3 con el audio extraído
     """
-     que sea un video
     if not is_video_file(file.filename):
         raise HTTPException(
             status_code=400,
             detail="El archivo debe ser un video (mp4, avi, mov, mkv, etc.)"
         )
     
-     tamaño
     content = await file.read()
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(
@@ -398,7 +392,6 @@ async def convert_video_to_audio(
             detail=f"Archivo demasiado grande. Máximo: {MAX_FILE_SIZE / 1024 / 1024}MB"
         )
     
-     video temporalmente
     job_id = str(uuid.uuid4())
     file_extension = os.path.splitext(file.filename)[1]
     temp_video_path = os.path.join(UPLOAD_DIR, f"{job_id}{file_extension}")
@@ -409,7 +402,6 @@ async def convert_video_to_audio(
         
         logger.info(f"Convirtiendo video a MP3 para job_id: {job_id}")
         
-         video a MP3
         converter = get_video_converter()
         mp3_filename = f"{job_id}.mp3"
         mp3_path = converter.convert_video_to_mp3(
@@ -443,7 +435,6 @@ async def convert_video_to_audio(
         raise HTTPException(status_code=500, detail=str(e))
     
     finally:
-         archivo de video temporal
         if os.path.exists(temp_video_path):
             try:
                 os.remove(temp_video_path)
@@ -477,21 +468,18 @@ async def convert_video_and_transcribe(
     Returns:
         Transcripción con identificación de hablantes
     """
-     HF_TOKEN
     if not HF_TOKEN:
         raise HTTPException(
             status_code=503,
             detail="HF_TOKEN no configurado. Se requiere para diarización."
         )
     
-     que sea un video
     if not is_video_file(file.filename):
         raise HTTPException(
             status_code=400,
             detail="El archivo debe ser un video"
         )
     
-     tamaño
     content = await file.read()
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(
@@ -499,7 +487,6 @@ async def convert_video_and_transcribe(
             detail=f"Archivo demasiado grande. Máximo: {MAX_FILE_SIZE / 1024 / 1024}MB"
         )
     
-     video
     job_id = str(uuid.uuid4())
     file_extension = os.path.splitext(file.filename)[1]
     temp_video_path = os.path.join(UPLOAD_DIR, f"{job_id}{file_extension}")
@@ -563,7 +550,6 @@ async def convert_video_and_transcribe(
         raise HTTPException(status_code=500, detail=str(e))
     
     finally:
-         archivos temporales
         if os.path.exists(temp_video_path):
             try:
                 os.remove(temp_video_path)
