@@ -688,7 +688,7 @@ async def general_exception_handler(request, exc):
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8888))
-    host = os.getenv("HOST", "127.0.0.1")
+    host = os.getenv("HOST", "0.0.0.0")
     
     print("=" * 60)
     print("🎤 API de Transcripción de Audio con Diarización")
