@@ -195,13 +195,19 @@ async def api_info():
 
 @app.get("/health", response_model=HealthResponse, tags=["General"])
 async def health_check():
-    transcriber_instance = get_transcriber()
-    
+    # No forzar la carga del modelo aquí (evita descargar modelos grandes al consultar /health)
+    device = "unknown"
+    if transcriber is not None:
+        try:
+            device = str(transcriber.device)
+        except Exception:
+            device = "unknown"
+
     return HealthResponse(
         status="healthy",
         timestamp=datetime.now().isoformat(),
         whisper_model=WHISPER_MODEL,
-        device=str(transcriber_instance.device)
+        device=device
     )
 
 
