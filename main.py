@@ -87,6 +87,67 @@ def get_video_converter():
     return video_converter
 
 
+def _save_docx(text: str, path: str):
+    try:
+        from docx import Document
+    except Exception:
+        raise RuntimeError("python-docx no está instalado. Instálalo con: pip install python-docx")
+    doc = Document()
+    for line in text.splitlines():
+        doc.add_paragraph(line)
+    doc.save(path)
+
+
+def _save_pdf(text: str, path: str):
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.pdfgen import canvas
+    except Exception:
+        raise RuntimeError("reportlab no está instalado. Instálalo con: pip install reportlab")
+    width, height = letter
+    c = canvas.Canvas(path, pagesize=letter)
+    y = height - 72
+    line_height = 12
+    for line in text.splitlines():
+        if y < 72:
+            c.showPage()
+            y = height - 72
+        # Truncar líneas muy largas para evitar overflow
+        c.drawString(72, y, line[:1000])
+        y -= line_height
+    c.save()
+
+
+def _save_docx(text: str, path: str):
+    try:
+        from docx import Document
+    except Exception:
+        raise RuntimeError("python-docx no está instalado. Instálalo con: pip install python-docx")
+    doc = Document()
+    for line in text.splitlines():
+        doc.add_paragraph(line)
+    doc.save(path)
+
+
+def _save_pdf(text: str, path: str):
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.pdfgen import canvas
+    except Exception:
+        raise RuntimeError("reportlab no está instalado. Instálalo con: pip install reportlab")
+    width, height = letter
+    c = canvas.Canvas(path, pagesize=letter)
+    y = height - 72
+    line_height = 12
+    for line in text.splitlines():
+        if y < 72:
+            c.showPage()
+            y = height - 72
+        c.drawString(72, y, line[:1000])
+        y -= line_height
+    c.save()
+
+
 app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 
 
@@ -168,7 +229,9 @@ async def transcribe_audio(
     file: UploadFile = File(...),
     language: Optional[str] = Form(None),
     task: str = Form("transcribe"),
-    output_format: str = Form("text")
+    output_format: str = Form("text"),
+    download_format: Optional[str] = Form(None),
+    background_tasks: BackgroundTasks = None
 ):
     content = await file.read()
     if len(content) > MAX_FILE_SIZE:
@@ -193,7 +256,22 @@ async def transcribe_audio(
             language=language,
             task=task
         )
-        
+
+        # Manejar descarga en DOCX o PDF
+        if download_format in ("docx", "pdf"):
+            out_name = f"{job_id}.{download_format}"
+            out_path = os.path.join(UPLOAD_DIR, out_name)
+            text_for_export = result.get("text", "")
+            if download_format == "docx":
+                _save_docx(text_for_export, out_path)
+            else:
+                _save_pdf(text_for_export, out_path)
+
+            if background_tasks is not None:
+                background_tasks.add_task(lambda p: os.remove(p) if os.path.exists(p) else None, out_path)
+
+            return FileResponse(out_path, media_type="application/octet-stream", filename=out_name)
+
         return {
             "job_id": job_id,
             "text": result["text"],
@@ -224,7 +302,9 @@ async def transcribe_with_diarization(
     num_speakers: Optional[int] = Form(None),
     min_speakers: Optional[int] = Form(None),
     max_speakers: Optional[int] = Form(None),
-    output_format: str = Form("text")
+    output_format: str = Form("text"),
+    download_format: Optional[str] = Form(None),
+    background_tasks: BackgroundTasks = None
 ):
     """
     Transcribe audio e identifica hablantes.
@@ -336,7 +416,21 @@ async def transcribe_with_diarization(
         
         # 5. Estadísticas
         statistics = get_speaker_statistics(aligned_segments)
-        
+
+        # Manejar descarga en DOCX o PDF
+        if download_format in ("docx", "pdf"):
+            out_name = f"{job_id}.{download_format}"
+            out_path = os.path.join(UPLOAD_DIR, out_name)
+            if download_format == "docx":
+                _save_docx(formatted_text, out_path)
+            else:
+                _save_pdf(formatted_text, out_path)
+
+            if background_tasks is not None:
+                background_tasks.add_task(lambda p: os.remove(p) if os.path.exists(p) else None, out_path)
+
+            return FileResponse(out_path, media_type="application/octet-stream", filename=out_name)
+
         return {
             "job_id": job_id,
             "text": formatted_text,

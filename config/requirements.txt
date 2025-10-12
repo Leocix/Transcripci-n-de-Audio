@@ -23,5 +23,9 @@ python-dotenv>=1.0.0
 aiofiles>=23.2.1
 requests>=2.31.0
 
+# Document export
+python-docx>=0.8.12
+reportlab>=4.0.0
+
 # Optimization for production (opcional)
 # gunicorn>=21.2.0  # Solo para Linux/Mac

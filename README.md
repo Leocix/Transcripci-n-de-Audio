@@ -412,6 +412,28 @@ WHISPER_MODEL=medium  # En lugar de base/tiny
 python scripts/check_config.py
 ```
 
+## 📄 Exportar a DOCX / PDF
+
+Puedes pedir que la transcripción se devuelva como archivo Word (.docx) o PDF (.pdf) directamente desde los endpoints de transcripción.
+
+- Parámetro (form): `download_format` — valores aceptados: `docx`, `pdf`.
+- Si incluyes `background_tasks` en la petición (FastAPI BackgroundTasks), el archivo exportado se eliminará automáticamente después de la respuesta.
+
+Ejemplo (curl):
+
+```bash
+curl -X POST "http://127.0.0.1:8888/transcribe" \
+	-F "file=@mi_audio.wav" \
+	-F "download_format=docx" \
+	-o resultado.docx
+```
+
+Requisitos adicionales: instala `python-docx` y `reportlab` para habilitar las exportaciones:
+
+```powershell
+pip install python-docx reportlab
+```
+
 ---
 
 ## 📊 Requisitos del Sistema
