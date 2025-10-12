@@ -9,6 +9,7 @@ import sys
 import uuid
 import logging
 from datetime import datetime
+import time
 import aiofiles
 from pathlib import Path
 from dotenv import load_dotenv
@@ -61,6 +62,106 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 transcriber = None
 diarizer = None
 video_converter = None
+
+# In-memory job store: job_id -> status dict
+jobs = {}
+
+
+def _create_job(job_id: str, meta: dict = None):
+    jobs[job_id] = {
+        "job_id": job_id,
+        "state": "pending",
+        "progress": 0,
+        "message": "pending",
+        "start_time": time.time(),
+        "last_update": time.time(),
+        "meta": meta or {},
+        "result": None,
+        "error": None
+    }
+
+
+def _update_job(job_id: str, progress: int = None, message: str = None, result: dict = None, state: str = None, error: str = None):
+    job = jobs.get(job_id)
+    if not job:
+        return
+    now = time.time()
+    if progress is not None:
+        job["progress"] = max(0, min(100, int(progress)))
+    if message is not None:
+        job["message"] = message
+    job["last_update"] = now
+    if state is not None:
+        job["state"] = state
+    if result is not None:
+        job["result"] = result
+    if error is not None:
+        job["error"] = error
+
+
+def _estimate_remaining(job: dict):
+    # Estimar tiempo restante usando elapsed / progress
+    elapsed = time.time() - job.get("start_time", time.time())
+    progress = job.get("progress", 0)
+    if progress <= 0:
+        return None
+    remaining = elapsed * (100 - progress) / progress
+    return int(remaining)
+
+
+def run_transcription_job(job_id: str, file_path: str, language: Optional[str], task: str, download_format: Optional[str]):
+    try:
+        _update_job(job_id, state="running", message="iniciando", progress=1)
+        logger.info(f"[JOB {job_id}] Cargando modelo para transcripción")
+        transcriber_instance = get_transcriber()
+
+        _update_job(job_id, progress=5, message="transcribiendo")
+        result = transcriber_instance.transcribe(file_path, language=language, task=task)
+
+        _update_job(job_id, progress=80, message="procesando resultados")
+        # Guardar resultados
+        job_result = {
+            "text": result.get("text"),
+            "language": result.get("language"),
+            "segments": result.get("segments"),
+            "model": result.get("model")
+        }
+
+        # Export si aplica
+        if download_format in ("docx", "pdf"):
+            out_name = f"{job_id}.{download_format}"
+            out_path = os.path.join(UPLOAD_DIR, out_name)
+            if download_format == "docx":
+                _save_docx(job_result["text"], out_path)
+            else:
+                _save_pdf(job_result["text"], out_path)
+            job_result["download_path"] = out_path
+
+        _update_job(job_id, progress=100, message="completado", state="done", result=job_result)
+        logger.info(f"[JOB {job_id}] Completado")
+    except Exception as e:
+        logger.error(f"[JOB {job_id}] Error: {e}")
+        _update_job(job_id, state="error", error=str(e), message="error")
+
+
+@app.get("/status/{job_id}", tags=["Jobs"])
+async def job_status(job_id: str):
+    job = jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job no encontrado")
+
+    remaining = _estimate_remaining(job)
+    response = {
+        "job_id": job_id,
+        "state": job.get("state"),
+        "progress": job.get("progress"),
+        "message": job.get("message"),
+        "eta_seconds": remaining,
+        "result": job.get("result"),
+        "error": job.get("error")
+    }
+    return response
+
 
 
 def get_transcriber():
@@ -250,14 +351,25 @@ async def transcribe_audio(
     file_extension = os.path.splitext(file.filename)[1]
     temp_path = os.path.join(UPLOAD_DIR, f"{job_id}{file_extension}")
     
+    async_process = Form(False)
+
     try:
         async with aiofiles.open(temp_path, 'wb') as f:
             await f.write(content)
         
         logger.info(f"Procesando transcripción para job_id: {job_id}")
-        
+
+        if len(content) > MAX_FILE_SIZE:
+        if request := None:
+            pass
+
+        # Soporte básico: si se envía field 'async_process' en el formulario, procesar en background
+        # Nota: FastAPI Form parameters can't be mixed with typed ones after definition; detect via environment for now
+        # Para compatibilidad con el frontend, el código cliente puede optar por llamadas sincrónicas.
+
         transcriber_instance = get_transcriber()
         result = transcriber_instance.transcribe(
+        async_process = Form(False)
             temp_path,
             language=language,
             task=task
@@ -265,6 +377,14 @@ async def transcribe_audio(
 
         # Manejar descarga en DOCX o PDF
         if download_format in ("docx", "pdf"):
+            # Procesamiento en background
+            if async_process and background_tasks is not None:
+                _create_job(job_id, meta={"type": "transcribe", "filename": file.filename})
+                _update_job(job_id, state="queued", message="en cola", progress=0)
+                background_tasks.add_task(run_transcription_job, job_id, temp_path, language, task, download_format)
+                return {"job_id": job_id, "status": "queued"}
+
+            # Procesamiento síncrono (comportamiento previo)
             out_name = f"{job_id}.{download_format}"
             out_path = os.path.join(UPLOAD_DIR, out_name)
             text_for_export = result.get("text", "")
