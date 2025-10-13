@@ -1,5 +1,5 @@
 // Configuración
-// Usar el mismo origen del navegador en producción (Render u otros) y
+// Usar el mismo origen del navegador en producción y
 // fallback a localhost para desarrollo local.
 const API_BASE_URL = (typeof window !== 'undefined' && window.location && window.location.origin)
     ? window.location.origin
