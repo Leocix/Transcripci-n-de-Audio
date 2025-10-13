@@ -7,3 +7,12 @@ uploads
 .git
 dist
 build
+node_modules/
+.DS_Store
+*.sqlite3
+*.db
+*.log
+.idea/
+*.zip
+*.tar.gz
+*.tgz
