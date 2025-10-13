@@ -26,7 +26,38 @@ Sistema de transcripción de audio y video con identificación automática de ha
 
 
 
-## 🚀 Inicio Rápido- Identificación de hablantes con pyannote.audio
+## 🚀 Inicio Rápido
+
+Este repositorio está preparado para deploy en DigitalOcean (DOCR + App Platform). A continuación las instrucciones rápidas para CI y despliegue.
+
+### CI / Deploy (DOCR)
+
+Usamos un workflow de GitHub Actions (`.github/workflows/ci-docr.yml`) que construye y empuja imágenes a DO Container Registry (DOCR). Por defecto construye una imagen "minimal" usando `config/requirements.txt`. Opcionalmente puede construir una imagen "full" con dependencias pesadas si configuras el secreto `DO_FULL_IMAGE=true`.
+
+Secrets necesarios en GitHub:
+- `DIGITALOCEAN_ACCESS_TOKEN` — token con permisos para DOCR y App Platform.
+- `DOCR_REGISTRY` — nombre de tu registry en DOCR (ej: my-registry).
+- `DOCR_REPOSITORY` — nombre del repo de imagen en DOCR (ej: transcripcion-audio).
+- (Opcional) `DO_FULL_IMAGE=true` — si quieres también construir la imagen con `requirements-optional.txt`.
+- (Opcional) `DO_APP_ID` — ID de la App Platform si quieres que el workflow actualice la app automáticamente.
+
+El workflow etiqueta la imagen con el SHA y con `latest`. Para usar la imagen en App Platform, edita `do_app_spec.yaml` con la ruta correcta del registry/repositorio.
+
+### Dependencias: minimal vs full
+
+Instala solo lo mínimo en producción para reducir el tamaño de la imagen:
+
+Minimal (recomendado para App Platform):
+```
+pip install -r config/requirements.txt
+```
+
+Full (GPU / máquinas con suficiente RAM):
+```
+pip install -r config/requirements-optional.txt
+```
+
+Continúa con el README existente...
 
 
 
