@@ -1,0 +1,41 @@
+# Optional / heavy dependencies (install these only on machines with GPUs or enough RAM)
+# Examples: for diarization and high-accuracy transcription
+
+# Core ML and audio models
+openai-whisper==20250625
+torch==2.8.0
+torchaudio==2.8.0
+
+# Pyannote (diarization)
+pyannote.audio==4.0.1
+pyannote-core==6.0.1
+pyannote-database==6.1.0
+pyannote-metrics==4.0.0
+pyannote-pipeline==4.0.0
+pyannoteai-sdk==0.3.0
+
+# ML / acceleration (vendor-specific CUDA wheels are recommended)
+torchmetrics==1.8.2
+triton==3.4.0
+
+# Heavy audio & analysis libraries
+librosa==0.11.0
+av==15.1.0
+soxr==1.0.0
+soundfile==0.13.1
+
+# Optional tooling
+python-docx==1.2.0
+reportlab==4.4.4
+
+# Hugging Face utilities
+huggingface-hub==0.35.3
+
+# Other heavy packages captured in install logs (pin versions to reduce surprises)
+numpy==2.3.3
+scipy==1.16.2
+pandas==2.3.3
+matplotlib==3.10.7
+
+# Note: For GPU support, prefer installing vendor-specific CUDA wheels and following
+# the respective library installation instructions (torch, torchaudio, triton, etc.).
