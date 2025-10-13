@@ -1,0 +1,47 @@
+name: Build and push to DigitalOcean Container Registry (DOCR)
+
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Install doctl and authenticate
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Login to DOCR
+        run: doctl registry login
+
+      - name: Build image
+        run: |
+          IMAGE=registry.digitalocean.com/${{ secrets.DOCR_REGISTRY }}/${{ secrets.DOCR_REPOSITORY }}:${{ github.sha }}
+          docker build --pull -t "$IMAGE" .
+
+      - name: Push image
+        run: |
+          IMAGE=registry.digitalocean.com/${{ secrets.DOCR_REGISTRY }}/${{ secrets.DOCR_REPOSITORY }}:${{ github.sha }}
+          docker push "$IMAGE"
+
+      - name: Output image location
+        run: echo "Image pushed: registry.digitalocean.com/${{ secrets.DOCR_REGISTRY }}/${{ secrets.DOCR_REPOSITORY }}:${{ github.sha }}"
+
+      # Optional: Update App Platform if DO_APP_ID secret is present
+      - name: Update DigitalOcean App (optional)
+        if: ${{ secrets.DO_APP_ID != '' }}
+        run: |
+          IMAGE=registry.digitalocean.com/${{ secrets.DOCR_REGISTRY }}/${{ secrets.DOCR_REPOSITORY }}:${{ github.sha }}
+          # Update the existing app by patching the spec to use the new image tag
+          doctl apps update ${{ secrets.DO_APP_ID }} --spec ./do_app_spec.yaml

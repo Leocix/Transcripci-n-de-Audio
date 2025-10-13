@@ -1,0 +1,26 @@
+name: transcripcion-audio-app
+region: nyc1
+services:
+  - name: api
+    github:
+      repo: Leocix/Transcripci-n-de-Audio
+      branch: master
+    run_command: python main.py
+    environment_slug: "python"
+    instance_size_slug: basic-xxs
+    instance_count: 1
+    docker_image:
+      name: "registry.digitalocean.com/YOUR_REGISTRY/YOUR_REPO:latest"
+      tag: "latest"
+    envs:
+      - key: HF_TOKEN
+        scope: RUN_AND_BUILD
+      - key: WHISPER_MODEL
+        value: small
+        scope: RUN_AND_BUILD
+      - key: MAX_FILE_SIZE
+        value: "209715200"
+        scope: RUN_AND_BUILD
+    http_port: 8888
+
+static_sites: []
