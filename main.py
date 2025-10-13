@@ -117,6 +117,7 @@ def run_transcription_job(job_id: str, file_path: str, language: Optional[str], 
 
         _update_job(job_id, progress=5, message="transcribiendo")
         result = transcriber_instance.transcribe(file_path, language=language, task=task)
+        _update_job(job_id, progress=60, message="transcripción completa")
 
         _update_job(job_id, progress=80, message="procesando resultados")
         # Guardar resultados
@@ -139,6 +140,17 @@ def run_transcription_job(job_id: str, file_path: str, language: Optional[str], 
 
         _update_job(job_id, progress=100, message="completado", state="done", result=job_result)
         logger.info(f"[JOB {job_id}] Completado")
+    except Exception as e:
+        logger.error(f"[JOB {job_id}] Error: {e}")
+        _update_job(job_id, state="error", error=str(e), message="error")
+    finally:
+        # Eliminar archivo temporal si existe
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                logger.info(f"[JOB {job_id}] Archivo temporal eliminado: {file_path}")
+        except Exception as e:
+            logger.warning(f"[JOB {job_id}] No se pudo eliminar archivo temporal: {e}")
     except Exception as e:
         logger.error(f"[JOB {job_id}] Error: {e}")
         _update_job(job_id, state="error", error=str(e), message="error")
@@ -338,6 +350,7 @@ async def transcribe_audio(
     task: str = Form("transcribe"),
     output_format: str = Form("text"),
     download_format: Optional[str] = Form(None),
+    async_process: bool = Form(False),
     background_tasks: BackgroundTasks = None
 ):
     content = await file.read()
@@ -346,30 +359,27 @@ async def transcribe_audio(
             status_code=413,
             detail=f"Archivo demasiado grande. Máximo: {MAX_FILE_SIZE / 1024 / 1024}MB"
         )
-    
+
     job_id = str(uuid.uuid4())
     file_extension = os.path.splitext(file.filename)[1]
     temp_path = os.path.join(UPLOAD_DIR, f"{job_id}{file_extension}")
-    
-    async_process = Form(False)
 
     try:
         async with aiofiles.open(temp_path, 'wb') as f:
             await f.write(content)
-        
+
         logger.info(f"Procesando transcripción para job_id: {job_id}")
 
-        if len(content) > MAX_FILE_SIZE:
-        if request := None:
-            pass
+        # Si se solicita procesamiento asíncrono, encolar y devolver el job_id
+        if async_process and background_tasks is not None:
+            _create_job(job_id, meta={"type": "transcribe", "filename": file.filename})
+            _update_job(job_id, state="queued", message="en cola", progress=0)
+            background_tasks.add_task(run_transcription_job, job_id, temp_path, language, task, download_format)
+            return {"job_id": job_id, "status": "queued"}
 
-        # Soporte básico: si se envía field 'async_process' en el formulario, procesar en background
-        # Nota: FastAPI Form parameters can't be mixed with typed ones after definition; detect via environment for now
-        # Para compatibilidad con el frontend, el código cliente puede optar por llamadas sincrónicas.
-
+        # Procesamiento síncrono (comportamiento previo)
         transcriber_instance = get_transcriber()
         result = transcriber_instance.transcribe(
-        async_process = Form(False)
             temp_path,
             language=language,
             task=task
@@ -377,14 +387,6 @@ async def transcribe_audio(
 
         # Manejar descarga en DOCX o PDF
         if download_format in ("docx", "pdf"):
-            # Procesamiento en background
-            if async_process and background_tasks is not None:
-                _create_job(job_id, meta={"type": "transcribe", "filename": file.filename})
-                _update_job(job_id, state="queued", message="en cola", progress=0)
-                background_tasks.add_task(run_transcription_job, job_id, temp_path, language, task, download_format)
-                return {"job_id": job_id, "status": "queued"}
-
-            # Procesamiento síncrono (comportamiento previo)
             out_name = f"{job_id}.{download_format}"
             out_path = os.path.join(UPLOAD_DIR, out_name)
             text_for_export = result.get("text", "")
@@ -405,16 +407,17 @@ async def transcribe_audio(
             "segments": result["segments"],
             "model": result["model"]
         }
-        
+
     except Exception as e:
         logger.error(f"Error en transcripción: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, 
+            status_code=500,
             detail=f"Error al transcribir: {type(e).__name__}: {str(e)}"
         )
-    
+
     finally:
-        if os.path.exists(temp_path):
+        # Si fue encolado para background, no eliminar aquí: lo hará el worker cuando termine
+        if not async_process and os.path.exists(temp_path):
             try:
                 os.remove(temp_path)
             except Exception as e:
