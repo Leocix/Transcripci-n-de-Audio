@@ -12,7 +12,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Copiar sólo requirements para aprovechar la cache de Docker
-COPY config/requirements.txt /app/config/requirements.txt
+ARG REQUIREMENTS=config/requirements.txt
+COPY ${REQUIREMENTS} /app/config/requirements.txt
 
 # Instalar dependencias Python en un prefijo (/install)
 RUN python -m pip install --upgrade pip setuptools wheel --root-user-action=ignore \

@@ -25,23 +25,34 @@ jobs:
       - name: Login to DOCR
         run: doctl registry login
 
-      - name: Build image
+      - name: Build minimal image (base requirements)
         run: |
-          IMAGE=registry.digitalocean.com/${{ secrets.DOCR_REGISTRY }}/${{ secrets.DOCR_REPOSITORY }}:${{ github.sha }}
-          docker build --pull -t "$IMAGE" .
+          REG=registry.digitalocean.com/${{ secrets.DOCR_REGISTRY }}
+          REPO=${{ secrets.DOCR_REPOSITORY }}
+          SHA_TAG=${{ github.sha }}
+          IMAGE_MIN="$REG/$REPO:$SHA_TAG"
+          docker build --pull -t "$IMAGE_MIN" --build-arg REQUIREMENTS=config/requirements.txt .
+          docker tag "$IMAGE_MIN" "$REG/$REPO:latest"
+          docker push "$IMAGE_MIN"
+          docker push "$REG/$REPO:latest"
 
-      - name: Push image
+      - name: (Optional) Build full image (heavy deps)
+        if: ${{ secrets.DO_FULL_IMAGE == 'true' }}
         run: |
-          IMAGE=registry.digitalocean.com/${{ secrets.DOCR_REGISTRY }}/${{ secrets.DOCR_REPOSITORY }}:${{ github.sha }}
-          docker push "$IMAGE"
+          REG=registry.digitalocean.com/${{ secrets.DOCR_REGISTRY }}
+          REPO=${{ secrets.DOCR_REPOSITORY }}
+          SHA_TAG=${{ github.sha }}
+          IMAGE_FULL="$REG/$REPO:${SHA_TAG}-full"
+          docker build --pull -t "$IMAGE_FULL" --build-arg REQUIREMENTS=config/requirements-optional.txt .
+          docker tag "$IMAGE_FULL" "$REG/$REPO:full-latest"
+          docker push "$IMAGE_FULL"
+          docker push "$REG/$REPO:full-latest"
 
-      - name: Output image location
-        run: echo "Image pushed: registry.digitalocean.com/${{ secrets.DOCR_REGISTRY }}/${{ secrets.DOCR_REPOSITORY }}:${{ github.sha }}"
+      - name: Output image locations
+        run: echo "Images pushed to registry.digitalocean.com/${{ secrets.DOCR_REGISTRY }}/${{ secrets.DOCR_REPOSITORY }}"
 
-      # Optional: Update App Platform if DO_APP_ID secret is present
       - name: Update DigitalOcean App (optional)
         if: ${{ secrets.DO_APP_ID != '' }}
         run: |
-          IMAGE=registry.digitalocean.com/${{ secrets.DOCR_REGISTRY }}/${{ secrets.DOCR_REPOSITORY }}:${{ github.sha }}
-          # Update the existing app by patching the spec to use the new image tag
+          # This will use the do_app_spec.yaml; edit it to point to the desired tag (latest or full-latest)
           doctl apps update ${{ secrets.DO_APP_ID }} --spec ./do_app_spec.yaml
