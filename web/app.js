@@ -324,6 +324,9 @@ async function processAudioWithDiarization(audioBlob, source) {
     showLoading(message);
 
     try {
+        // Enviar como job asíncrono para poder mostrar progreso
+        formData.append('async_process', 'true');
+
         const response = await fetch(`${API_BASE_URL}${endpoint}`, {
             method: 'POST',
             body: formData
@@ -333,11 +336,54 @@ async function processAudioWithDiarization(audioBlob, source) {
             throw new Error(`Error ${response.status}: ${response.statusText}`);
         }
 
-        const result = await response.json();
-        
-        displayResults(result);
-        showToast('success', `Transcripción completada. ${result.num_speakers} hablantes detectados.`);
-        
+        const data = await response.json();
+
+        // Si se devolvió job_id, iniciar polling al endpoint /status/{job_id}
+        if (data.job_id) {
+            const jobId = data.job_id;
+            showLoading(`Trabajo encolado (job: ${jobId}). Esperando inicio...`);
+            // Poll cada 3s
+            const pollInterval = 3000;
+            const poll = setInterval(async () => {
+                try {
+                    const st = await fetch(`${API_BASE_URL}/status/${jobId}`);
+                    if (!st.ok) throw new Error(`Status ${st.status}`);
+                    const sdata = await st.json();
+
+                    // Actualizar mensaje de carga con progreso y ETA
+                    const etaText = sdata.eta_seconds ? ` - ETA: ${formatDuration(sdata.eta_seconds)}` : '';
+                    showLoading(`Progreso: ${sdata.progress}% - ${sdata.message}${etaText}`);
+
+                    if (sdata.state === 'done') {
+                        clearInterval(poll);
+                        hideLoading();
+                        if (sdata.result) {
+                            displayResults(sdata.result);
+                            showToast('success', 'Transcripción completada.');
+                            document.querySelector('[data-tab="resultados"]').click();
+                        } else {
+                            showToast('error', 'Job completado pero sin resultado');
+                        }
+                    } else if (sdata.state === 'error') {
+                        clearInterval(poll);
+                        hideLoading();
+                        showToast('error', `Error en el job: ${sdata.error || sdata.message}`);
+                    }
+
+                } catch (err) {
+                    clearInterval(poll);
+                    hideLoading();
+                    console.error('Error al consultar status del job:', err);
+                    showToast('error', 'No se pudo obtener el estado del job');
+                }
+            }, pollInterval);
+
+            return;
+        }
+
+        // Si la API devolvió el resultado directamente (sin job), mostrarlo
+        displayResults(data);
+        showToast('success', `Transcripción completada. ${data.num_speakers || 0} hablantes detectados.`);
         // Cambiar a pestaña de resultados
         document.querySelector('[data-tab="resultados"]').click();
 
@@ -456,4 +502,12 @@ function formatFileSize(bytes) {
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+}
+
+function formatDuration(seconds) {
+    if (!seconds || seconds <= 0) return '0s';
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${hrs > 0 ? hrs + 'h ' : ''}${mins > 0 ? mins + 'm ' : ''}${secs}s`;
 }

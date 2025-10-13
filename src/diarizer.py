@@ -2,12 +2,14 @@
 Módulo de diarización de hablantes usando pyannote.audio
 """
 import os
-from pyannote.audio import Pipeline
 from typing import List, Dict, Optional
 import logging
-import torch
-import librosa
-import numpy as np
+
+# Import heavy libs lazily inside the class to avoid import-time overhead
+try:
+    import torch
+except Exception:
+    torch = None
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -36,12 +38,29 @@ class SpeakerDiarizer:
                 "Obtén uno en: https://huggingface.co/settings/tokens"
             )
         
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        # Determinar dispositivo si torch está disponible
+        if torch is None:
+            try:
+                import importlib
+                torch = importlib.import_module('torch')
+            except Exception:
+                torch = None
+
+        self.device = "cuda" if (torch is not None and torch.cuda.is_available()) else "cpu"
         logger.info(f"Inicializando diarizador en dispositivo '{self.device}'")
-        
+
         # Desactivar symlinks en Windows
         os.environ["HF_HUB_DISABLE_SYMLINKS"] = "1"
-        
+
+        # Cargar librerías pesadas de forma perezosa
+        try:
+            import importlib
+            Pipeline = importlib.import_module('pyannote.audio').Pipeline
+            librosa = importlib.import_module('librosa')
+        except Exception as e:
+            logger.error(f"No se pudieron importar pyannote.audio o librosa: {e}")
+            raise
+
         try:
             # Cargar pipeline de diarización
             logger.info("Descargando/cargando modelo de diarización...")
@@ -49,13 +68,13 @@ class SpeakerDiarizer:
                 "pyannote/speaker-diarization-3.1",
                 token=self.hf_token
             )
-            
+
             # Mover a GPU si está disponible
             if self.device == "cuda":
                 self.pipeline = self.pipeline.to(torch.device("cuda"))
-            
+
             logger.info("Pipeline de diarización cargado exitosamente")
-            
+
         except Exception as e:
             logger.error(f"Error al cargar pipeline de diarización: {e}", exc_info=True)
             if "401" in str(e) or "403" in str(e):

@@ -771,6 +771,50 @@ async def get_models_info():
     }
 
 
+@app.post('/debug/create_test_job', tags=["General"])
+async def create_test_job(duration_seconds: int = 10, background_tasks: BackgroundTasks = None):
+    """Crear un job de prueba que avanza automáticamente para testear el polling UI.
+
+    Args:
+        duration_seconds: Tiempo total que tomará el job (aprox.)
+    Returns:
+        job_id
+    """
+    job_id = str(uuid.uuid4())
+    _create_job(job_id, meta={"type": "test"})
+    _update_job(job_id, state="queued", message="en cola", progress=0)
+
+    def _runner(jid: str, total: int):
+        try:
+            _update_job(jid, state="running", message="iniciando", progress=1)
+            steps = max(4, int(total))
+            for i in range(1, steps + 1):
+                time.sleep(total / steps)
+                prog = int((i / steps) * 100)
+                _update_job(jid, progress=prog, message=f"progreso {prog}%")
+            # Resultado de ejemplo
+            res = {
+                "text": "Este es un resultado de prueba.",
+                "language": "es",
+                "segments": [],
+                "model": "test-sim"
+            }
+            _update_job(jid, progress=100, state="done", message="completado", result=res)
+        except Exception as e:
+            _update_job(jid, state="error", error=str(e), message="error")
+
+    # Ejecutar en background
+    if background_tasks is not None:
+        background_tasks.add_task(_runner, job_id, duration_seconds)
+    else:
+        # Si no hay background tasks (ej: llamado desde TestClient sin), lanzar hilo
+        import threading
+        t = threading.Thread(target=_runner, args=(job_id, duration_seconds), daemon=True)
+        t.start()
+
+    return {"job_id": job_id}
+
+
 # Manejo de errores
 @app.exception_handler(Exception)
 async def general_exception_handler(request, exc):

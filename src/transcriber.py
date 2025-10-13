@@ -1,6 +1,4 @@
 import os
-import whisper
-import torch
 from typing import Dict, Optional
 import logging
 
@@ -12,9 +10,17 @@ class AudioTranscriber:
     
     def __init__(self, model_name: str = "base"):
         self.model_name = model_name
+        # Importar torch y whisper de forma perezosa para evitar carga innecesaria
+        try:
+            import importlib
+            torch = importlib.import_module('torch')
+            whisper = importlib.import_module('whisper')
+        except Exception as e:
+            logger.error(f"No se pudieron importar torch/whisper: {e}")
+            raise
+
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         logger.info(f"Inicializando Whisper modelo '{model_name}' en dispositivo '{self.device}'")
-        
         try:
             self.model = whisper.load_model(model_name, device=self.device)
             logger.info(f"Modelo Whisper '{model_name}' cargado exitosamente")
