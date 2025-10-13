@@ -151,9 +151,6 @@ def run_transcription_job(job_id: str, file_path: str, language: Optional[str], 
                 logger.info(f"[JOB {job_id}] Archivo temporal eliminado: {file_path}")
         except Exception as e:
             logger.warning(f"[JOB {job_id}] No se pudo eliminar archivo temporal: {e}")
-    except Exception as e:
-        logger.error(f"[JOB {job_id}] Error: {e}")
-        _update_job(job_id, state="error", error=str(e), message="error")
 
 
 @app.get("/status/{job_id}", tags=["Jobs"])
@@ -226,36 +223,6 @@ def _save_pdf(text: str, path: str):
             c.showPage()
             y = height - 72
         # Truncar líneas muy largas para evitar overflow
-        c.drawString(72, y, line[:1000])
-        y -= line_height
-    c.save()
-
-
-def _save_docx(text: str, path: str):
-    try:
-        from docx import Document
-    except Exception:
-        raise RuntimeError("python-docx no está instalado. Instálalo con: pip install python-docx")
-    doc = Document()
-    for line in text.splitlines():
-        doc.add_paragraph(line)
-    doc.save(path)
-
-
-def _save_pdf(text: str, path: str):
-    try:
-        from reportlab.lib.pagesizes import letter
-        from reportlab.pdfgen import canvas
-    except Exception:
-        raise RuntimeError("reportlab no está instalado. Instálalo con: pip install reportlab")
-    width, height = letter
-    c = canvas.Canvas(path, pagesize=letter)
-    y = height - 72
-    line_height = 12
-    for line in text.splitlines():
-        if y < 72:
-            c.showPage()
-            y = height - 72
         c.drawString(72, y, line[:1000])
         y -= line_height
     c.save()
