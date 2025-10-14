@@ -15,13 +15,11 @@ services:
       tag: "full-latest"
     envs:
       - key: HF_TOKEN
-        scope: RUN_AND_BUILD
+        from_secret: HF_TOKEN
       - key: WHISPER_MODEL
         value: small
-        scope: RUN_AND_BUILD
       - key: MAX_FILE_SIZE
         value: "209715200"
-        scope: RUN_AND_BUILD
     http_port: 8888
 
 static_sites: []
