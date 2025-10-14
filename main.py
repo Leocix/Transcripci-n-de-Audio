@@ -177,7 +177,15 @@ def get_transcriber():
     global transcriber
     if transcriber is None:
         logger.info(f"Cargando modelo Whisper: {WHISPER_MODEL}")
-        transcriber = AudioTranscriber(model_name=WHISPER_MODEL)
+        try:
+            transcriber = AudioTranscriber(model_name=WHISPER_MODEL)
+        except ModuleNotFoundError as e:
+            # Rethrow with a clearer message for handlers
+            logger.error(f"Dependencia faltante al inicializar transcriber: {e}")
+            raise RuntimeError("Dependencia requerida no está instalada: torch. Instala las dependencias pesadas o usa la imagen 'full' que incluya PyTorch.")
+        except Exception:
+            # propagate other errors
+            raise
     return transcriber
 
 
@@ -293,12 +301,9 @@ async def health_check():
 
 @app.get("/debug", tags=["General"])
 async def debug_info():
-    import torch
-    return {
+    info = {
         "status": "ok",
         "python_version": sys.version,
-        "torch_version": torch.__version__,
-        "cuda_available": torch.cuda.is_available(),
         "whisper_model": WHISPER_MODEL,
         "hf_token_configured": bool(HF_TOKEN),
         "hf_token_length": len(HF_TOKEN) if HF_TOKEN else 0,
@@ -308,6 +313,21 @@ async def debug_info():
         "web_dir_exists": WEB_DIR.exists(),
         "max_file_size_mb": MAX_FILE_SIZE / 1024 / 1024
     }
+
+    try:
+        import importlib
+        torch = importlib.import_module('torch')
+        info.update({
+            "torch_version": getattr(torch, "__version__", "unknown"),
+            "cuda_available": torch.cuda.is_available()
+        })
+    except Exception:
+        info.update({
+            "torch_version": None,
+            "cuda_available": False
+        })
+
+    return info
 
 
 @app.post("/transcribe", tags=["Transcription"])
