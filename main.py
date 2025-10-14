@@ -36,11 +36,8 @@ from src.utils import (
     format_transcript,
     get_speaker_statistics
 )
-# Worker in-process
-try:
-    from src import worker as worker_module
-except Exception:
-    worker_module = None
+# Worker in-process will be importado en startup para evitar fallos de importación
+worker_module = None
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -60,18 +57,30 @@ def start_worker_thread():
     Requiere que la instancia tenga recursos suficientes (tú ya subiste a 16GB).
     """
     import threading
+    global worker_module
+
+    # Importar el módulo del worker aquí y registrar cualquier excepción de import
+    if worker_module is None:
+        try:
+            from src import worker as worker_module
+        except Exception as e:
+            logger.exception(f"No se pudo importar module worker en startup: {e}")
+            worker_module = None
+
     if worker_module is None:
         logger.info("Worker module no disponible; no se iniciará el worker embebido.")
         return
 
     def _run():
         try:
+            logger.info("Embedded worker thread iniciando main_loop()")
             worker_module.main_loop()
         except Exception as e:
-            logger.error(f"Worker embebido terminó con error: {e}")
+            logger.exception(f"Worker embebido terminó con error: {e}")
 
     t = threading.Thread(target=_run, name='embedded-worker', daemon=True)
     t.start()
+    logger.info("Hilo del worker embebido lanzado")
 
 app.add_middleware(
     CORSMiddleware,
