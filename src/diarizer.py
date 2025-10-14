@@ -29,6 +29,9 @@ class SpeakerDiarizer:
             hf_token: Token de Hugging Face para acceder al modelo
                      Obtener en: https://huggingface.co/settings/tokens
         """
+        # Referirse a la variable `torch` definida a nivel de módulo
+        global torch
+
         self.hf_token = hf_token or os.getenv("HF_TOKEN")
         
         if not self.hf_token:
