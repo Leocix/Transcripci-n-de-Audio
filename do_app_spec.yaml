@@ -1,10 +1,7 @@
 name: transcripcion-audio-app
 region: nyc1
 services:
-  - name: api
-    github:
-      repo: Leocix/Transcripci-n-de-Audio
-      branch: master
+  - name: transcripci-n-de-audio
     run_command: python main.py
     environment_slug: "python"
     instance_size_slug: basic-xxs
