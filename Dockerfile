@@ -33,8 +33,8 @@ RUN apt-get update \
        ffmpeg libsndfile1 ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Copiar paquetes Python instalados desde el builder
-COPY --from=builder /install /usr/local
+# Copiar paquetes Python instalados desde el builder (builder instaló en /usr/local)
+COPY --from=builder /usr/local /usr/local
 
 # Copiar la aplicacion (usa .dockerignore para reducir contexto)
 COPY . /app
