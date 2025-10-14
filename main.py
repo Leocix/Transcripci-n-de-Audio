@@ -4,6 +4,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
+from pydantic import BaseModel
+import json
+import requests
 import os
 import sys
 import uuid
@@ -33,6 +36,11 @@ from src.utils import (
     format_transcript,
     get_speaker_statistics
 )
+# Worker in-process
+try:
+    from src import worker as worker_module
+except Exception:
+    worker_module = None
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -42,6 +50,28 @@ app = FastAPI(
     description="API para transcribir audio e identificar hablantes",
     version="1.0.0"
 )
+
+
+@app.on_event('startup')
+def start_worker_thread():
+    """Lanza el worker en un hilo daemon para procesar jobs en `uploads/jobs/`.
+
+    Esta es una solución práctica cuando no se despliega un worker separado.
+    Requiere que la instancia tenga recursos suficientes (tú ya subiste a 16GB).
+    """
+    import threading
+    if worker_module is None:
+        logger.info("Worker module no disponible; no se iniciará el worker embebido.")
+        return
+
+    def _run():
+        try:
+            worker_module.main_loop()
+        except Exception as e:
+            logger.error(f"Worker embebido terminó con error: {e}")
+
+    t = threading.Thread(target=_run, name='embedded-worker', daemon=True)
+    t.start()
 
 app.add_middleware(
     CORSMiddleware,
@@ -58,6 +88,8 @@ HF_TOKEN = os.getenv("HF_TOKEN")
 MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", 100 * 1024 * 1024))
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+JOBS_DIR = os.path.join(UPLOAD_DIR, "jobs")
+os.makedirs(JOBS_DIR, exist_ok=True)
 
 transcriber = None
 diarizer = None
@@ -328,6 +360,86 @@ async def debug_info():
         })
 
     return info
+
+
+class PresignResponse(BaseModel):
+    upload_url: str
+    object_url: str
+
+
+@app.post('/presign', response_model=PresignResponse, tags=["Uploads"])
+async def presign_upload(filename: str = Form(...)):
+    """Genera una URL presigned para subir a DigitalOcean Spaces (S3 compatible).
+
+    Requiere las variables de entorno: SPACES_KEY, SPACES_SECRET, SPACES_REGION, SPACES_BUCKET
+    Si no existen, devuelve un error con instrucciones.
+    """
+    try:
+        import boto3
+    except Exception:
+        raise HTTPException(status_code=501, detail="boto3 no está instalado en la imagen. Instala boto3 para usar presigned URLs.")
+
+    SPACES_KEY = os.getenv('SPACES_KEY')
+    SPACES_SECRET = os.getenv('SPACES_SECRET')
+    SPACES_REGION = os.getenv('SPACES_REGION')
+    SPACES_BUCKET = os.getenv('SPACES_BUCKET')
+
+    if not (SPACES_KEY and SPACES_SECRET and SPACES_REGION and SPACES_BUCKET):
+        raise HTTPException(status_code=400, detail="Faltan variables SPACES_KEY/SPACES_SECRET/SPACES_REGION/SPACES_BUCKET en el entorno")
+
+    client = boto3.client(
+        's3',
+        region_name=SPACES_REGION,
+        endpoint_url=f'https://{SPACES_REGION}.digitaloceanspaces.com',
+        aws_access_key_id=SPACES_KEY,
+        aws_secret_access_key=SPACES_SECRET
+    )
+
+    key = f"uploads/{uuid.uuid4()}_{os.path.basename(filename)}"
+    try:
+        url = client.generate_presigned_url(
+            'put_object',
+            Params={'Bucket': SPACES_BUCKET, 'Key': key, 'ACL': 'private'},
+            ExpiresIn=3600
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generando presigned URL: {e}")
+
+    object_url = f"https://{SPACES_BUCKET}.{SPACES_REGION}.digitaloceanspaces.com/{key}"
+    return PresignResponse(upload_url=url, object_url=object_url)
+
+
+class JobCreate(BaseModel):
+    source_url: str
+    task: str = 'transcribe-diarize'  # 'transcribe' or 'transcribe-diarize'
+    whisper_model: Optional[str] = None
+    num_speakers: Optional[int] = None
+
+
+@app.post('/jobs/create', tags=["Jobs"])
+async def create_job_from_url(payload: JobCreate):
+    """Crear un job a partir de una URL accesible públicamente (ej: Spaces pre-signed object URL).
+
+    El worker en segundo plano detectará el job y lo procesará.
+    """
+    job_id = str(uuid.uuid4())
+    meta = payload.dict()
+    meta.update({
+        'job_id': job_id,
+        'created_at': datetime.utcnow().isoformat()
+    })
+
+    job_file = os.path.join(JOBS_DIR, f"{job_id}.json")
+    try:
+        with open(job_file, 'w', encoding='utf-8') as f:
+            json.dump(meta, f)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"No se pudo encolar el job: {e}")
+
+    _create_job(job_id, meta=meta)
+    _update_job(job_id, state='queued', message='en cola', progress=0)
+
+    return { 'job_id': job_id, 'status': 'queued' }
 
 
 @app.post("/transcribe", tags=["Transcription"])

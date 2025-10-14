@@ -37,5 +37,8 @@ scipy==1.16.2
 pandas==2.3.3
 matplotlib==3.10.7
 
+# Utilities
+boto3==1.30.0
+
 # Note: For GPU support, prefer installing vendor-specific CUDA wheels and following
 # the respective library installation instructions (torch, torchaudio, triton, etc.).
