@@ -7,6 +7,11 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    env:
+      DOCR_REGISTRY: ${{ secrets.DOCR_REGISTRY }}
+      DOCR_REPOSITORY: ${{ secrets.DOCR_REPOSITORY }}
+      DO_FULL_IMAGE: ${{ secrets.DO_FULL_IMAGE }}
+      DO_APP_ID: ${{ secrets.DO_APP_ID }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -25,34 +30,74 @@ jobs:
       - name: Login to DOCR
         run: doctl registry login
 
-      - name: Build minimal image (base requirements)
+      - name: Build minimal image (base requirements) and capture logs
         run: |
-          REG=registry.digitalocean.com/${{ secrets.DOCR_REGISTRY }}
-          REPO=${{ secrets.DOCR_REPOSITORY }}
+          set -o pipefail
+          REG=registry.digitalocean.com/$DOCR_REGISTRY
+          REPO=$DOCR_REPOSITORY
           SHA_TAG=${{ github.sha }}
           IMAGE_MIN="$REG/$REPO:$SHA_TAG"
-          docker build --pull -t "$IMAGE_MIN" --build-arg REQUIREMENTS=config/requirements.txt .
-          docker tag "$IMAGE_MIN" "$REG/$REPO:latest"
-          docker push "$IMAGE_MIN"
-          docker push "$REG/$REPO:latest"
+          echo "Building minimal image: $IMAGE_MIN"
+          docker build --pull -t "$IMAGE_MIN" --build-arg REQUIREMENTS=config/requirements.txt . 2>&1 | tee build-minimal.log
+          docker tag "$IMAGE_MIN" "$REG/$REPO:latest" 2>&1 | tee -a build-minimal.log
+          # Push with retries to mitigate transient errors
+          for i in 1 2 3; do
+            docker push "$IMAGE_MIN" 2>&1 | tee -a build-minimal.log && break || { echo "push failed, retrying ($i)..."; sleep 5; }
+          done
+          for i in 1 2 3; do
+            docker push "$REG/$REPO:latest" 2>&1 | tee -a build-minimal.log && break || { echo "push failed, retrying ($i)..."; sleep 5; }
+          done
 
-      - name: (Optional) Build full image (heavy deps)
-        if: ${{ secrets.DO_FULL_IMAGE == 'true' }}
+      - name: Upload minimal build logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-minimal-logs
+          path: build-minimal.log
+
+      - name: (Optional) Build full image (heavy deps) and capture logs
+        if: env.DO_FULL_IMAGE == 'true'
         run: |
-          REG=registry.digitalocean.com/${{ secrets.DOCR_REGISTRY }}
-          REPO=${{ secrets.DOCR_REPOSITORY }}
+          set -o pipefail
+          REG=registry.digitalocean.com/$DOCR_REGISTRY
+          REPO=$DOCR_REPOSITORY
           SHA_TAG=${{ github.sha }}
           IMAGE_FULL="$REG/$REPO:${SHA_TAG}-full"
-          docker build --pull -t "$IMAGE_FULL" --build-arg REQUIREMENTS=config/requirements-optional.txt .
-          docker tag "$IMAGE_FULL" "$REG/$REPO:full-latest"
-          docker push "$IMAGE_FULL"
-          docker push "$REG/$REPO:full-latest"
+          echo "Building full image: $IMAGE_FULL"
+          docker build --pull -t "$IMAGE_FULL" --build-arg REQUIREMENTS=config/requirements-optional.txt . 2>&1 | tee build-full.log
+          docker tag "$IMAGE_FULL" "$REG/$REPO:full-latest" 2>&1 | tee -a build-full.log
+          for i in 1 2 3; do
+            docker push "$IMAGE_FULL" 2>&1 | tee -a build-full.log && break || { echo "push failed, retrying ($i)..."; sleep 10; }
+          done
+          for i in 1 2 3; do
+            docker push "$REG/$REPO:full-latest" 2>&1 | tee -a build-full.log && break || { echo "push failed, retrying ($i)..."; sleep 10; }
+          done
+
+      - name: Upload full build logs
+        if: ${{ secrets.DO_FULL_IMAGE == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-full-logs
+          path: build-full.log
 
       - name: Output image locations
-        run: echo "Images pushed to registry.digitalocean.com/${{ secrets.DOCR_REGISTRY }}/${{ secrets.DOCR_REPOSITORY }}"
+        run: echo "Images pushed to registry.digitalocean.com/$DOCR_REGISTRY/$DOCR_REPOSITORY"
+
+      - name: Fetch DigitalOcean App Platform logs (optional)
+        if: env.DO_APP_ID != ''
+        run: |
+          # fetch recent deploy logs for the 'api' component (adjust component name if different)
+          echo "Fetching App Platform logs for app $DO_APP_ID"
+          doctl apps logs $DO_APP_ID --component api --type deploy --lines 200 > app-deploy.log || true
+
+      - name: Upload App Platform logs (if any)
+        if: env.DO_APP_ID != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-deploy-logs
+          path: app-deploy.log
 
       - name: Update DigitalOcean App (optional)
-        if: ${{ secrets.DO_APP_ID != '' }}
+        if: env.DO_APP_ID != ''
         run: |
           # This will use the do_app_spec.yaml; edit it to point to the desired tag (latest or full-latest)
-          doctl apps update ${{ secrets.DO_APP_ID }} --spec ./do_app_spec.yaml
+          doctl apps update $DO_APP_ID --spec ./do_app_spec.yaml
