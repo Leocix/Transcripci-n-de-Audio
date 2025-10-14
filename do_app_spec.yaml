@@ -9,9 +9,10 @@ services:
     environment_slug: "python"
     instance_size_slug: basic-xxs
     instance_count: 1
-    docker_image:
-      name: "registry.digitalocean.com/YOUR_REGISTRY/YOUR_REPO:latest"
-      tag: "latest"
+    image:
+      registry: "registry.digitalocean.com"
+      repository: "transcriptor/transcripcion-audio"
+      tag: "full-latest"
     envs:
       - key: HF_TOKEN
         scope: RUN_AND_BUILD
