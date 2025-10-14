@@ -14,10 +14,8 @@ services:
       repository: "transcriptor/transcripcion-audio"
       tag: "full-latest"
     envs:
-      - key: HF_TOKEN
-        from_secret: HF_TOKEN
       - key: WHISPER_MODEL
-        value: small
+        value: "small"
       - key: MAX_FILE_SIZE
         value: "209715200"
     http_port: 8888
