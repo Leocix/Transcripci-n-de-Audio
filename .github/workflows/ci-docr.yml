@@ -30,6 +30,14 @@ jobs:
       - name: Login to DOCR
         run: doctl registry login
 
+      - name: Validate DOCR registry/repository secrets
+        run: |
+          if [ -z "$DOCR_REGISTRY" ] || [ -z "$DOCR_REPOSITORY" ]; then
+            echo "ERROR: DOCR_REGISTRY and DOCR_REPOSITORY must be set in repository secrets."
+            echo "Set them in Settings -> Secrets -> Actions and re-run the workflow."
+            exit 1
+          fi
+
       - name: Build minimal image (base requirements) and capture logs
         run: |
           set -o pipefail
