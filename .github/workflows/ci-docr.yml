@@ -122,8 +122,7 @@ jobs:
           name: do_app_spec
           path: do_app_spec.yaml
 
-      - name: Update DigitalOcean App (optional)
-        if: env.DO_APP_ID != ''
+      - name: Update DigitalOcean App (disabled)
+        if: ${{ false }}
         run: |
-          # This will use the do_app_spec.yaml; edit it to point to the desired tag (latest or full-latest)
-          doctl apps update $DO_APP_ID --spec ./do_app_spec.yaml
+          echo "Automatic app update disabled in CI. To enable, ensure do_app_spec.yaml matches doctl schema and set the condition back to use DO_APP_ID."
