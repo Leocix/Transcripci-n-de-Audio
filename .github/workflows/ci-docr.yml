@@ -104,6 +104,24 @@ jobs:
           name: app-deploy-logs
           path: app-deploy.log
 
+      - name: Show do_app_spec.yaml (debug)
+        if: env.DO_APP_ID != ''
+        run: |
+          echo "---- BEGIN do_app_spec.yaml (runtime) ----"
+          if [ -f ./do_app_spec.yaml ]; then
+            cat ./do_app_spec.yaml
+          else
+            echo "do_app_spec.yaml not found at workspace root"
+          fi
+          echo "---- END do_app_spec.yaml ----"
+
+      - name: Upload do_app_spec (debug)
+        if: env.DO_APP_ID != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: do_app_spec
+          path: do_app_spec.yaml
+
       - name: Update DigitalOcean App (optional)
         if: env.DO_APP_ID != ''
         run: |
