@@ -71,7 +71,10 @@ jobs:
           SHA_TAG=${{ github.sha }}
           IMAGE_FULL="$REG/$REPO:${SHA_TAG}-full"
           echo "Building full image: $IMAGE_FULL"
-          docker build --pull -t "$IMAGE_FULL" --build-arg REQUIREMENTS=config/requirements-optional.txt . 2>&1 | tee build-full.log
+          # Create a merged requirements file (minimal + optional) so the full image contains both sets
+          cat config/requirements.txt config/requirements-optional.txt > config/requirements-full.txt
+          # Build using the combined requirements to ensure FastAPI/uvicorn + torch (and friends) are installed
+          docker build --pull -t "$IMAGE_FULL" --build-arg REQUIREMENTS=config/requirements-full.txt . 2>&1 | tee build-full.log
           docker tag "$IMAGE_FULL" "$REG/$REPO:full-latest" 2>&1 | tee -a build-full.log
           for i in 1 2 3; do
             docker push "$IMAGE_FULL" 2>&1 | tee -a build-full.log && break || { echo "push failed, retrying ($i)..."; sleep 10; }

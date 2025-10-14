@@ -10,8 +10,9 @@ services:
     instance_size_slug: basic-xxs
     instance_count: 1
     image:
-      registry: "registry.digitalocean.com"
-      repository: "transcriptor/transcripcion-audio"
+      registry_type: "DOCR"
+      registry: "transcriptor"
+      repository: "transcripcion-audio"
       tag: "full-latest"
     envs:
       - key: WHISPER_MODEL
