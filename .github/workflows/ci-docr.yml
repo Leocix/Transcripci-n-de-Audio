@@ -55,7 +55,7 @@ jobs:
           path: build-minimal.log
 
       - name: (Optional) Build full image (heavy deps) and capture logs
-        if: env.DO_FULL_IMAGE == 'true'
+        if: ${{ env.DO_FULL_IMAGE == 'true' }}
         run: |
           set -o pipefail
           REG=registry.digitalocean.com/$DOCR_REGISTRY
@@ -73,7 +73,7 @@ jobs:
           done
 
       - name: Upload full build logs
-        if: ${{ secrets.DO_FULL_IMAGE == 'true' }}
+        if: ${{ env.DO_FULL_IMAGE == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: build-full-logs
