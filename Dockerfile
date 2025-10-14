@@ -15,9 +15,9 @@ RUN apt-get update \
 ARG REQUIREMENTS=config/requirements.txt
 COPY ${REQUIREMENTS} /app/config/requirements.txt
 
-# Instalar dependencias Python en un prefijo (/install)
+# Instalar dependencias Python directamente en /usr/local (sitio esperado por el runtime)
 RUN python -m pip install --upgrade pip setuptools wheel --root-user-action=ignore \
-    && pip install --no-cache-dir --prefix=/install --root-user-action=ignore -r /app/config/requirements.txt
+    && pip install --no-cache-dir --prefix=/usr/local --root-user-action=ignore -r /app/config/requirements.txt
 
 
 FROM python:3.11-slim
