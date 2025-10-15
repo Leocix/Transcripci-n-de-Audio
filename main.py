@@ -66,7 +66,22 @@ def start_worker_thread():
             worker_module = importlib.import_module('src.worker')
         except Exception as e:
             logger.exception(f"No se pudo importar module worker en startup: {e}")
-            worker_module = None
+            # Fallback: intentar cargar por path (útil cuando el paquete no está en sys.path)
+            try:
+                import importlib.util
+                from pathlib import Path
+                p = Path(__file__).resolve().parent / 'src' / 'worker.py'
+                if p.exists():
+                    spec = importlib.util.spec_from_file_location('embedded_worker', str(p))
+                    wm = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(wm)
+                    worker_module = wm
+                    logger.info(f"Worker cargado desde archivo: {p}")
+                else:
+                    worker_module = None
+            except Exception as e2:
+                logger.exception(f"Fallback para cargar worker desde archivo falló: {e2}")
+                worker_module = None
 
     if worker_module is None:
         logger.info("Worker module no disponible; no se iniciará el worker embebido.")
