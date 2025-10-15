@@ -26,7 +26,8 @@ else:
     logger_setup = logging.getLogger(__name__)
     logger_setup.warning(f"Archivo .env no encontrado en: {ENV_FILE}")
 
-sys.path.insert(0, str(PROJECT_ROOT / "src"))
+# Añadir la raíz del proyecto al path para que el paquete `src` pueda importarse como top-level
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.transcriber import AudioTranscriber
 from src.diarizer import SpeakerDiarizer
