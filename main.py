@@ -50,6 +50,26 @@ app = FastAPI(
 )
 
 
+def _worker_file_head():
+    """Comprueba si /app/src/worker.py existe y devuelve las primeras líneas o None.
+
+    Esto se separa para evitar problemas de scope con Path dentro de la función de startup.
+    """
+    try:
+        p_check = Path(__file__).resolve().parent / 'src' / 'worker.py'
+        if p_check.exists():
+            try:
+                with open(p_check, 'r', encoding='utf-8') as fh:
+                    first_lines = ''.join([next(fh) for _ in range(5)])
+                return (p_check, first_lines)
+            except Exception:
+                return (p_check, None)
+        else:
+            return (p_check, None)
+    except Exception:
+        return (None, None)
+
+
 @app.on_event('startup')
 def start_worker_thread():
     """Lanza el worker en un hilo daemon para procesar jobs en `uploads/jobs/`.
@@ -63,20 +83,21 @@ def start_worker_thread():
     # Importar el módulo del worker aquí y registrar cualquier excepción de import
     if worker_module is None:
         # Diagnostic: verificar si el archivo src/worker.py existe dentro del contenedor
-        try:
-            p_check = Path(__file__).resolve().parent / 'src' / 'worker.py'
-            if p_check.exists():
-                logger.info(f"DEBUG: worker.py existe en la imagen en: {p_check} (size={p_check.stat().st_size} bytes)")
-                try:
-                    with open(p_check, 'r', encoding='utf-8') as fh:
-                        first_lines = ''.join([next(fh) for _ in range(5)])
-                    logger.info(f"DEBUG: primeras líneas de worker.py:\n{first_lines}")
-                except Exception:
-                    logger.info("DEBUG: no se pudieron leer las primeras líneas de worker.py")
-            else:
-                logger.info("DEBUG: worker.py NO existe en la imagen /app/src/")
-        except Exception:
-            logger.exception("DEBUG: error comprobando existencia de worker.py")
+        p_check, first_lines = _worker_file_head()
+        if p_check is None:
+            logger.info("DEBUG: no se pudo determinar la ruta de worker.py")
+        else:
+            try:
+                if p_check.exists():
+                    logger.info(f"DEBUG: worker.py existe en la imagen en: {p_check} (size={p_check.stat().st_size} bytes)")
+                    if first_lines:
+                        logger.info(f"DEBUG: primeras líneas de worker.py:\n{first_lines}")
+                    else:
+                        logger.info("DEBUG: no se pudieron leer las primeras líneas de worker.py")
+                else:
+                    logger.info("DEBUG: worker.py NO existe en la imagen /app/src/")
+            except Exception:
+                logger.exception("DEBUG: error comprobando existencia de worker.py")
         try:
             import importlib
             worker_module = importlib.import_module('src.worker')
