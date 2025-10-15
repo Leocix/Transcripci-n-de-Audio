@@ -119,6 +119,32 @@ def start_worker_thread():
                 logger.exception(f"Fallback para cargar worker desde archivo falló: {e2}")
                 worker_module = None
 
+            # Si no había worker en la imagen, intentar descargarlo desde GitHub (raw) y cargarlo dinámicamente.
+            if worker_module is None:
+                try:
+                    raw_url = "https://raw.githubusercontent.com/Leocix/Transcripci-n-de-Audio/master/src/worker.py"
+                    logger.info(f"Intentando descargar worker desde: {raw_url}")
+                    # Usar requests con timeout corto
+                    resp = requests.get(raw_url, timeout=10)
+                    if resp.status_code == 200 and resp.text:
+                        # Escribir en un archivo temporal dentro del proyecto (no commit)
+                        tmp_path = Path(__file__).resolve().parent / 'src' / '_downloaded_worker.py'
+                        try:
+                            tmp_path.parent.mkdir(parents=True, exist_ok=True)
+                            tmp_path.write_text(resp.text, encoding='utf-8')
+                            spec = importlib.util.spec_from_file_location('downloaded_worker', str(tmp_path))
+                            wm2 = importlib.util.module_from_spec(spec)
+                            spec.loader.exec_module(wm2)
+                            worker_module = wm2
+                            logger.info(f"Worker dinámico cargado desde {raw_url} y guardado en {tmp_path}")
+                        except Exception as e3:
+                            logger.exception(f"Error al escribir/cargar worker descargado: {e3}")
+                            worker_module = None
+                    else:
+                        logger.warning(f"No se pudo descargar worker desde raw URL, status_code={resp.status_code}")
+                except Exception as e4:
+                    logger.exception(f"Excepción al intentar descargar worker desde GitHub: {e4}")
+
     if worker_module is None:
         logger.info("Worker module no disponible; no se iniciará el worker embebido.")
         return
