@@ -1034,6 +1034,30 @@ async def create_test_job(duration_seconds: int = 10, background_tasks: Backgrou
     return {"job_id": job_id}
 
 
+
+@app.post('/debug/remove_job_file', tags=["General"])
+async def debug_remove_job_file(job_id: str):
+    """Eliminar o mover el archivo de job en uploads/jobs/ por job_id.
+
+    Útil para demorar o limpiar jobs problemáticos sin acceso directo al FS del contenedor.
+    """
+    job_file = os.path.join(JOBS_DIR, f"{job_id}.json")
+    failed_dir = os.path.join(JOBS_DIR, 'failed')
+    if not os.path.exists(job_file):
+        return {"ok": False, "reason": "job_file_not_found", "path": job_file}
+
+    try:
+        os.makedirs(failed_dir, exist_ok=True)
+        # mover a failed con sufijo timestamp
+        ts = datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
+        dest = os.path.join(failed_dir, f"{job_id}.{ts}.failed")
+        os.replace(job_file, dest)
+        return {"ok": True, "moved_to": dest}
+    except Exception as e:
+        logger.exception(f"Error moviendo job file {job_file}: {e}")
+        return {"ok": False, "reason": str(e)}
+
+
 # Manejo de errores
 @app.exception_handler(Exception)
 async def general_exception_handler(request, exc):

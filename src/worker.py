@@ -11,12 +11,14 @@ import time
 import json
 import logging
 import requests
+import shutil
 from pathlib import Path
 from datetime import datetime
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 UPLOAD_DIR = os.getenv('UPLOAD_DIR', str(PROJECT_ROOT / 'uploads'))
 JOBS_DIR = os.path.join(UPLOAD_DIR, 'jobs')
+FAILED_DIR = os.path.join(JOBS_DIR, 'failed')
 
 # Asegurarse de que el path src esté en sys.path si se ejecuta desde el repo raíz
 import sys
@@ -35,6 +37,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('worker')
 
 POLL_INTERVAL = int(os.getenv('WORKER_POLL_INTERVAL', '5'))
+MAX_ATTEMPTS = int(os.getenv('WORKER_MAX_ATTEMPTS', '3'))
 
 
 def download_to_path(url: str, out_path: str):
@@ -60,6 +63,7 @@ def process_job_file(path: str):
     task = job.get('task', 'transcribe-diarize')
     whisper_model = job.get('whisper_model')
     num_speakers = job.get('num_speakers')
+    attempts = int(job.get('attempts', 0))
 
     if not source_url:
         logger.error(f"Job {job_id} no tiene source_url")
@@ -72,7 +76,52 @@ def process_job_file(path: str):
         logger.info(f"[JOB {job_id}] Descargando {source_url} -> {local_path}")
         download_to_path(source_url, local_path)
     except Exception as e:
-        logger.error(f"[JOB {job_id}] Error descargando source_url: {e}")
+        # Determinar si es un 404 (no existe) -> no tiene sentido reintentar
+        is_http_err = isinstance(e, requests.HTTPError) or hasattr(e, 'response')
+        status = None
+        if hasattr(e, 'response') and getattr(e, 'response') is not None:
+            try:
+                status = int(getattr(e, 'response').status_code)
+            except Exception:
+                status = None
+
+        logger.error(f"[JOB {job_id}] Error descargando source_url: {e} (status={status})")
+
+        # Si es 404, marcar como intento final
+        if status == 404:
+            attempts = MAX_ATTEMPTS
+        else:
+            attempts += 1
+
+        # Si excede intentos, mover job a carpeta failed con metadatos
+        if attempts >= MAX_ATTEMPTS:
+            os.makedirs(FAILED_DIR, exist_ok=True)
+            try:
+                # añadir metadatos
+                job['attempts'] = attempts
+                job['last_error'] = str(e)
+                failed_name = os.path.basename(path) + '.failed'
+                failed_path = os.path.join(FAILED_DIR, failed_name)
+                with open(failed_path, 'w', encoding='utf-8') as ff:
+                    json.dump(job, ff, ensure_ascii=False, indent=2)
+                # eliminar job original
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
+                logger.info(f"[JOB {job_id}] Movido a failed: {failed_path}")
+            except Exception as mv_e:
+                logger.error(f"[JOB {job_id}] Error moviendo a failed: {mv_e}")
+            return False
+
+        # actualizar contador en el mismo job file para reintentos posteriores
+        try:
+            job['attempts'] = attempts
+            with open(path, 'w', encoding='utf-8') as wf:
+                json.dump(job, wf, ensure_ascii=False)
+        except Exception as wfe:
+            logger.error(f"[JOB {job_id}] No se pudo actualizar intentos en job file: {wfe}")
+
         return False
 
     # Cargar o crear instancias
@@ -111,6 +160,8 @@ def main_loop():
     logger.info("Worker arrancando, escaneando jobs en: %s" % JOBS_DIR)
     while True:
         try:
+            os.makedirs(JOBS_DIR, exist_ok=True)
+            os.makedirs(FAILED_DIR, exist_ok=True)
             for fname in os.listdir(JOBS_DIR):
                 if not fname.endswith('.json'):
                     continue
