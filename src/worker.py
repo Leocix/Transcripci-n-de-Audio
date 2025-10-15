@@ -22,8 +22,14 @@ JOBS_DIR = os.path.join(UPLOAD_DIR, 'jobs')
 import sys
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.transcriber import AudioTranscriber
-from src.diarizer import SpeakerDiarizer
+# Preferir imports relativos cuando se ejecuta como paquete `src`
+try:
+    from .transcriber import AudioTranscriber
+    from .diarizer import SpeakerDiarizer
+except Exception:
+    # Fallback a imports absolutos (útil cuando se ejecuta el script directamente)
+    from src.transcriber import AudioTranscriber
+    from src.diarizer import SpeakerDiarizer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('worker')
