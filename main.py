@@ -62,7 +62,8 @@ def start_worker_thread():
     # Importar el módulo del worker aquí y registrar cualquier excepción de import
     if worker_module is None:
         try:
-            from src import worker as worker_module
+            import importlib
+            worker_module = importlib.import_module('src.worker')
         except Exception as e:
             logger.exception(f"No se pudo importar module worker en startup: {e}")
             worker_module = None
