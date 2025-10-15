@@ -22,8 +22,8 @@ JOBS_DIR = os.path.join(UPLOAD_DIR, 'jobs')
 import sys
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from transcriber import AudioTranscriber
-from diarizer import SpeakerDiarizer
+from src.transcriber import AudioTranscriber
+from src.diarizer import SpeakerDiarizer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('worker')
