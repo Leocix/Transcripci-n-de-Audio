@@ -61,6 +61,21 @@ def start_worker_thread():
 
     # Importar el módulo del worker aquí y registrar cualquier excepción de import
     if worker_module is None:
+        # Diagnostic: verificar si el archivo src/worker.py existe dentro del contenedor
+        try:
+            p_check = Path(__file__).resolve().parent / 'src' / 'worker.py'
+            if p_check.exists():
+                logger.info(f"DEBUG: worker.py existe en la imagen en: {p_check} (size={p_check.stat().st_size} bytes)")
+                try:
+                    with open(p_check, 'r', encoding='utf-8') as fh:
+                        first_lines = ''.join([next(fh) for _ in range(5)])
+                    logger.info(f"DEBUG: primeras líneas de worker.py:\n{first_lines}")
+                except Exception:
+                    logger.info("DEBUG: no se pudieron leer las primeras líneas de worker.py")
+            else:
+                logger.info("DEBUG: worker.py NO existe en la imagen /app/src/")
+        except Exception:
+            logger.exception("DEBUG: error comprobando existencia de worker.py")
         try:
             import importlib
             worker_module = importlib.import_module('src.worker')
