@@ -84,7 +84,6 @@ def start_worker_thread():
             # Fallback: intentar cargar por path (útil cuando el paquete no está en sys.path)
             try:
                 import importlib.util
-                from pathlib import Path
                 p = Path(__file__).resolve().parent / 'src' / 'worker.py'
                 if p.exists():
                     spec = importlib.util.spec_from_file_location('embedded_worker', str(p))
