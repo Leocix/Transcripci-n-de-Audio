@@ -10,7 +10,7 @@ services:
       registry_type: "DOCR"
       registry: "transcriptor"
       repository: "transcripcion-audio"
-      tag: "full-latest"
+  digest: "sha256:719e47b8a4f6e103c44809f777d7bf9eea8c57868ff5c29c2016fbd316db6116"
     envs:
       - key: WHISPER_MODEL
         value: "small"
