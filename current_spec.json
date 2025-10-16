@@ -1,0 +1,243 @@
+[
+  {
+    "id": "b091e096-4ced-4b53-b736-c0994770adb5",
+    "owner_uuid": "044820e4-eccc-45e4-bf03-73099dc478fc",
+    "spec": {
+      "name": "transcripcion-audio-app",
+      "services": [
+        {
+          "name": "transcripci-n-de-audio",
+          "image": {
+            "registry_type": "DOCR",
+            "registry": "transcriptor",
+            "repository": "transcripcion-audio",
+            "digest": "sha256:719e47b8a4f6e103c44809f777d7bf9eea8c57868ff5c29c2016fbd316db6116"
+          },
+          "run_command": "python main.py",
+          "environment_slug": "python",
+          "envs": [
+            {
+              "key": "WHISPER_MODEL",
+              "value": "small",
+              "scope": "RUN_AND_BUILD_TIME"
+            },
+            {
+              "key": "MAX_FILE_SIZE",
+              "value": "209715200",
+              "scope": "RUN_AND_BUILD_TIME"
+            }
+          ],
+          "instance_size_slug": "basic-xxs",
+          "instance_count": 1,
+          "http_port": 8888
+        }
+      ],
+      "region": "nyc",
+      "ingress": {
+        "rules": [
+          {
+            "match": {
+              "path": {
+                "prefix": "/"
+              }
+            },
+            "component": {
+              "name": "transcripci-n-de-audio"
+            }
+          }
+        ]
+      }
+    },
+    "last_deployment_active_at": "2025-10-15T06:00:46Z",
+    "default_ingress": "https://seashell-app-787wp.ondigitalocean.app",
+    "created_at": "2025-10-13T06:08:43Z",
+    "updated_at": "2025-10-15T06:00:54Z",
+    "active_deployment": {
+      "id": "74f097f6-cc2a-4f45-8d53-c27e4f222908",
+      "spec": {
+        "name": "transcripcion-audio-app",
+        "services": [
+          {
+            "name": "transcripci-n-de-audio",
+            "image": {
+              "registry_type": "DOCR",
+              "registry": "transcriptor",
+              "repository": "transcripcion-audio",
+              "digest": "sha256:719e47b8a4f6e103c44809f777d7bf9eea8c57868ff5c29c2016fbd316db6116"
+            },
+            "run_command": "python main.py",
+            "environment_slug": "python",
+            "envs": [
+              {
+                "key": "WHISPER_MODEL",
+                "value": "small",
+                "scope": "RUN_AND_BUILD_TIME"
+              },
+              {
+                "key": "MAX_FILE_SIZE",
+                "value": "209715200",
+                "scope": "RUN_AND_BUILD_TIME"
+              }
+            ],
+            "instance_size_slug": "basic-xxs",
+            "instance_count": 1,
+            "http_port": 8888
+          }
+        ],
+        "region": "nyc",
+        "ingress": {
+          "rules": [
+            {
+              "match": {
+                "path": {
+                  "prefix": "/"
+                }
+              },
+              "component": {
+                "name": "transcripci-n-de-audio"
+              }
+            }
+          ]
+        }
+      },
+      "services": [
+        {
+          "name": "transcripci-n-de-audio"
+        }
+      ],
+      "phase_last_updated_at": "2025-10-15T06:00:46Z",
+      "created_at": "2025-10-15T05:55:54Z",
+      "updated_at": "2025-10-15T06:00:46Z",
+      "cause": "app spec updated",
+      "progress": {
+        "success_steps": 6,
+        "total_steps": 6,
+        "steps": [
+          {
+            "name": "build",
+            "status": "SUCCESS",
+            "steps": [
+              {
+                "name": "initialize",
+                "status": "SUCCESS",
+                "started_at": "2025-10-15T05:55:56.418652689Z",
+                "ended_at": "2025-10-15T05:55:56.7826245Z"
+              },
+              {
+                "name": "components",
+                "status": "SUCCESS",
+                "steps": [
+                  {
+                    "name": "transcripci-n-de-audio",
+                    "status": "SUCCESS",
+                    "started_at": "0001-01-01T00:00:00Z",
+                    "ended_at": "0001-01-01T00:00:00Z",
+                    "reason": {
+                      "code": "PreBuiltImage",
+                      "message": "Your build job was skipped because you specified a pre-built image."
+                    },
+                    "component_name": "transcripci-n-de-audio",
+                    "message_base": "Building service"
+                  }
+                ],
+                "started_at": "2025-10-15T05:55:56.782682578Z",
+                "ended_at": "2025-10-15T05:55:56.784639199Z"
+              }
+            ],
+            "started_at": "2025-10-15T05:55:56.418560608Z",
+            "ended_at": "2025-10-15T05:55:56.786398923Z"
+          },
+          {
+            "name": "deploy",
+            "status": "SUCCESS",
+            "steps": [
+              {
+                "name": "initialize",
+                "status": "SUCCESS",
+                "started_at": "2025-10-15T05:55:58.718257866Z",
+                "ended_at": "2025-10-15T05:55:59.157134358Z"
+              },
+              {
+                "name": "components",
+                "status": "SUCCESS",
+                "steps": [
+                  {
+                    "name": "transcripci-n-de-audio",
+                    "status": "SUCCESS",
+                    "steps": [
+                      {
+                        "name": "deploy",
+                        "status": "SUCCESS",
+                        "started_at": "0001-01-01T00:00:00Z",
+                        "ended_at": "0001-01-01T00:00:00Z",
+                        "component_name": "transcripci-n-de-audio",
+                        "message_base": "Deploying service"
+                      },
+                      {
+                        "name": "wait",
+                        "status": "SUCCESS",
+                        "started_at": "0001-01-01T00:00:00Z",
+                        "ended_at": "0001-01-01T00:00:00Z",
+                        "component_name": "transcripci-n-de-audio",
+                        "message_base": "Waiting for service"
+                      }
+                    ],
+                    "started_at": "0001-01-01T00:00:00Z",
+                    "ended_at": "0001-01-01T00:00:00Z",
+                    "component_name": "transcripci-n-de-audio"
+                  }
+                ],
+                "started_at": "2025-10-15T05:55:59.157157201Z",
+                "ended_at": "2025-10-15T06:00:45.09796172Z"
+              },
+              {
+                "name": "finalize",
+                "status": "SUCCESS",
+                "started_at": "2025-10-15T06:00:45.35224694Z",
+                "ended_at": "2025-10-15T06:00:45.846741487Z"
+              }
+            ],
+            "started_at": "2025-10-15T05:55:58.718237899Z",
+            "ended_at": "2025-10-15T06:00:45.84682403Z"
+          }
+        ]
+      },
+      "phase": "ACTIVE",
+      "tier_slug": "basic",
+      "previous_deployment_id": "3fbd46d4-2c99-4125-b03e-7bd159d3b62d",
+      "cause_details": {
+        "digitalocean_user_action": {
+          "user": {
+            "uuid": "77e4ef44-9a0a-4d14-8174-34ec37b8ffb4",
+            "email": "leonardoguzmans06@gmail.com",
+            "full_name": "Leocix"
+          },
+          "name": "UPDATE_SPEC"
+        },
+        "type": "MANUAL"
+      },
+      "timing": {
+        "pending": "2.418652689s",
+        "build_total": "0.367746234s",
+        "build_billable": "0s"
+      }
+    },
+    "last_deployment_created_at": "2025-10-15T05:55:54Z",
+    "live_url": "https://seashell-app-787wp.ondigitalocean.app",
+    "region": {
+      "slug": "nyc",
+      "label": "New York",
+      "flag": "usa",
+      "continent": "North America",
+      "data_centers": [
+        "nyc1",
+        "nyc3"
+      ]
+    },
+    "tier_slug": "basic",
+    "live_url_base": "https://seashell-app-787wp.ondigitalocean.app",
+    "live_domain": "seashell-app-787wp.ondigitalocean.app",
+    "build_config": {},
+    "project_id": "c89d4548-316b-48e8-8861-31724406d9f2"
+  }
+]

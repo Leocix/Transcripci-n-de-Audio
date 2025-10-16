@@ -1,0 +1,206 @@
+[
+  {
+    "id": "c05aca22-db5b-4794-81d5-5ca7563d9622",
+    "spec": {
+      "name": "transcripcion-audio-worker",
+      "services": [
+        {
+          "name": "worker",
+          "image": {
+            "registry_type": "DOCR",
+            "registry": "transcriptor",
+            "repository": "transcripcion-audio",
+            "digest": "sha256:2eb8084b3b2c698c9396ceeefa1168bc7ef79b78975c63c3f244294ccdb73bda"
+          },
+          "run_command": "python -m src.worker",
+          "environment_slug": "python",
+          "envs": [
+            {
+              "key": "WHISPER_MODEL",
+              "value": "large-v2",
+              "scope": "RUN_AND_BUILD_TIME"
+            },
+            {
+              "key": "HF_TOKEN",
+              "value": "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",
+              "scope": "RUN_AND_BUILD_TIME"
+            }
+          ],
+          "instance_size_slug": "apps-d-4vcpu-16gb",
+          "instance_count": 1,
+          "http_port": 8080
+        }
+      ],
+      "region": "nyc",
+      "ingress": {
+        "rules": [
+          {
+            "match": {
+              "path": {
+                "prefix": "/"
+              }
+            },
+            "component": {
+              "name": "worker"
+            }
+          }
+        ]
+      },
+      "features": [
+        "buildpack-stack=ubuntu-22"
+      ]
+    },
+    "services": [
+      {
+        "name": "worker"
+      }
+    ],
+    "phase_last_updated_at": "2025-10-15T00:06:21Z",
+    "created_at": "2025-10-15T00:02:02Z",
+    "updated_at": "2025-10-15T00:06:22Z",
+    "cause": "initial deployment",
+    "progress": {
+      "pending_steps": 1,
+      "success_steps": 4,
+      "error_steps": 1,
+      "total_steps": 6,
+      "steps": [
+        {
+          "name": "build",
+          "status": "SUCCESS",
+          "steps": [
+            {
+              "name": "initialize",
+              "status": "SUCCESS",
+              "started_at": "2025-10-15T00:02:05.380872761Z",
+              "ended_at": "2025-10-15T00:02:05.611443841Z"
+            },
+            {
+              "name": "components",
+              "status": "SUCCESS",
+              "steps": [
+                {
+                  "name": "worker",
+                  "status": "SUCCESS",
+                  "started_at": "0001-01-01T00:00:00Z",
+                  "ended_at": "0001-01-01T00:00:00Z",
+                  "reason": {
+                    "code": "PreBuiltImage",
+                    "message": "Your build job was skipped because you specified a pre-built image."
+                  },
+                  "component_name": "worker",
+                  "message_base": "Building service"
+                }
+              ],
+              "started_at": "2025-10-15T00:02:05.611473826Z",
+              "ended_at": "2025-10-15T00:02:05.612030813Z"
+            }
+          ],
+          "started_at": "2025-10-15T00:02:05.380734413Z",
+          "ended_at": "2025-10-15T00:02:05.612243208Z"
+        },
+        {
+          "name": "deploy",
+          "status": "ERROR",
+          "steps": [
+            {
+              "name": "initialize",
+              "status": "SUCCESS",
+              "started_at": "2025-10-15T00:02:07.037907715Z",
+              "ended_at": "2025-10-15T00:02:07.577500019Z"
+            },
+            {
+              "name": "components",
+              "status": "ERROR",
+              "steps": [
+                {
+                  "name": "worker",
+                  "status": "ERROR",
+                  "steps": [
+                    {
+                      "name": "deploy",
+                      "status": "SUCCESS",
+                      "started_at": "0001-01-01T00:00:00Z",
+                      "ended_at": "0001-01-01T00:00:00Z",
+                      "component_name": "worker",
+                      "message_base": "Deploying service"
+                    },
+                    {
+                      "name": "wait",
+                      "status": "ERROR",
+                      "started_at": "0001-01-01T00:00:00Z",
+                      "ended_at": "0001-01-01T00:00:00Z",
+                      "reason": {
+                        "code": "DeployContainerExitNonZero",
+                        "message": "Your deploy failed because your container exited with a non-zero exit code."
+                      },
+                      "component_name": "worker",
+                      "message_base": "Waiting for service"
+                    }
+                  ],
+                  "started_at": "0001-01-01T00:00:00Z",
+                  "ended_at": "0001-01-01T00:00:00Z",
+                  "reason": {
+                    "code": "DeployContainerExitNonZero",
+                    "message": "Your deploy failed because your container exited with a non-zero exit code."
+                  },
+                  "component_name": "worker"
+                }
+              ],
+              "started_at": "2025-10-15T00:02:07.577521669Z",
+              "ended_at": "2025-10-15T00:06:11.363981863Z",
+              "reason": {
+                "code": "DeployContainerExitNonZero",
+                "message": "Your deploy failed because your container exited with a non-zero exit code."
+              }
+            },
+            {
+              "name": "finalize",
+              "status": "PENDING",
+              "started_at": "0001-01-01T00:00:00Z",
+              "ended_at": "0001-01-01T00:00:00Z"
+            }
+          ],
+          "started_at": "2025-10-15T00:02:07.037883901Z",
+          "ended_at": "2025-10-15T00:06:11.60513823Z",
+          "reason": {
+            "code": "DeployContainerExitNonZero",
+            "message": "Your deploy failed because your container exited with a non-zero exit code."
+          }
+        }
+      ],
+      "summary_steps": [
+        {
+          "name": "deploy.components.worker.wait",
+          "status": "ERROR",
+          "started_at": "0001-01-01T00:00:00Z",
+          "ended_at": "0001-01-01T00:00:00Z",
+          "reason": {
+            "code": "DeployContainerExitNonZero",
+            "message": "Your deploy failed because your container exited with a non-zero exit code."
+          },
+          "component_name": "worker",
+          "message_base": "Waiting for service"
+        }
+      ]
+    },
+    "phase": "ERROR",
+    "tier_slug": "professional",
+    "cause_details": {
+      "digitalocean_user_action": {
+        "user": {
+          "uuid": "77e4ef44-9a0a-4d14-8174-34ec37b8ffb4",
+          "email": "leonardoguzmans06@gmail.com",
+          "full_name": "Leocix"
+        },
+        "name": "CREATE_DEPLOYMENT"
+      },
+      "type": "MANUAL"
+    },
+    "timing": {
+      "pending": "3.380872761s",
+      "build_total": "0.231370447s",
+      "build_billable": "0s"
+    }
+  }
+]
