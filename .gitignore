@@ -52,6 +52,17 @@ uploads/*
 *.bak
 *.cache
 
+# Doctl / deployment artifacts
+doctl-*
+*doctl*
+
+# Push / image artifacts
+push-*
+image-*
+
+# Archive folder for moved artifacts
+archive/
+
 # Archivos de configuración sensibles
 .env
 *.key

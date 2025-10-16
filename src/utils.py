@@ -8,6 +8,51 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def ensure_upload_dirs(upload_dir: str):
+    """Crear de forma segura la carpeta de uploads y subdirectorios usados por la aplicación.
+
+    Crea los paths:
+      - upload_dir
+      - upload_dir/jobs
+      - upload_dir/results
+      - upload_dir/jobs/failed
+
+    Devuelve un dict con las rutas creadas.
+    """
+    import os
+    from pathlib import Path
+
+    p = Path(upload_dir)
+    try:
+        p.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        # intentar con os.makedirs por compatibilidad
+        try:
+            os.makedirs(str(p), exist_ok=True)
+        except Exception:
+            logger.exception(f"No se pudo crear upload_dir: {upload_dir}")
+
+    jobs = p / 'jobs'
+    results = p / 'results'
+    failed = jobs / 'failed'
+
+    for d in (jobs, results, failed):
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            try:
+                os.makedirs(str(d), exist_ok=True)
+            except Exception:
+                logger.exception(f"No se pudo crear directorio: {d}")
+
+    return {
+        'upload_dir': str(p),
+        'jobs_dir': str(jobs),
+        'results_dir': str(results),
+        'failed_dir': str(failed)
+    }
+
+
 def renumber_speakers(diarization_segments: List[Dict]) -> List[Dict]:
     """
     Renumera los hablantes para que comiencen desde SPEAKER_01 en lugar de SPEAKER_00.

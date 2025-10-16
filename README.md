@@ -443,6 +443,29 @@ WHISPER_MODEL=medium  # En lugar de base/tiny
 python scripts/check_config.py
 ```
 
+### Imagen CPU-optimizada (PyTorch)
+
+Si quieres una imagen con PyTorch optimizado para CPU (mejor rendimiento en inferencia), usa el `Dockerfile.cpu-optimized` incluido.
+
+Build y push (PowerShell):
+
+```powershell
+# Variables
+$REG = 'registry.digitalocean.com/transcriptor/transcripcion-audio'
+$TAG = 'cpu-optimized-$(Get-Date -Format yyyyMMdd-HHmm)'
+
+# Build
+docker build -f Dockerfile.cpu-optimized -t "$REG:$TAG" .
+
+# Push
+docker push "$REG:$TAG"
+
+# Copia el digest del push y actualiza tu spec_for_update.json con esa imagen (image.digest)
+```
+
+Luego actualiza la App Platform con `doctl apps update <APP_ID> --spec spec_for_update.json --wait`.
+
+
 ## 📄 Exportar a DOCX / PDF
 
 Puedes pedir que la transcripción se devuelva como archivo Word (.docx) o PDF (.pdf) directamente desde los endpoints de transcripción.

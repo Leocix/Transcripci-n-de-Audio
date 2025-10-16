@@ -35,7 +35,8 @@ from src.video_converter import VideoConverter, is_video_file
 from src.utils import (
     align_transcription_with_diarization,
     format_transcript,
-    get_speaker_statistics
+    get_speaker_statistics,
+    ensure_upload_dirs,
 )
 # Worker in-process will be importado en startup para evitar fallos de importación
 worker_module = None
@@ -174,9 +175,10 @@ WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")
 HF_TOKEN = os.getenv("HF_TOKEN")
 MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", 100 * 1024 * 1024))
 
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-JOBS_DIR = os.path.join(UPLOAD_DIR, "jobs")
-os.makedirs(JOBS_DIR, exist_ok=True)
+# Asegurar que las carpetas de uploads y subdirectorios existan (jobs, results, jobs/failed)
+paths = ensure_upload_dirs(UPLOAD_DIR)
+JOBS_DIR = paths.get('jobs_dir')
+RESULTS_DIR = paths.get('results_dir')
 
 transcriber = None
 diarizer = None
@@ -274,8 +276,40 @@ def run_transcription_job(job_id: str, file_path: str, language: Optional[str], 
 
 @app.get("/status/{job_id}", tags=["Jobs"])
 async def job_status(job_id: str):
+    # Primero intentar resolver desde el store en memoria
     job = jobs.get(job_id)
+
     if not job:
+        # Intentar cargar resultados desde disco (uploads/results/{job_id}.json)
+        try:
+            results_dir = RESULTS_DIR if 'RESULTS_DIR' in globals() else os.path.join(UPLOAD_DIR, 'results')
+            json_path = os.path.join(results_dir, f"{job_id}.json")
+            if os.path.exists(json_path):
+                with open(json_path, 'r', encoding='utf-8') as rf:
+                    disk_result = json.load(rf)
+                # Normalizar una respuesta compatible con el esquema de status.
+                # Aceptar archivos que usen 'text' o 'transcription', y 'segments' o 'diarization'.
+                text_val = disk_result.get('text') or disk_result.get('transcription') or ''
+                segments_val = disk_result.get('segments') or disk_result.get('diarization') or None
+                response = {
+                    "job_id": job_id,
+                    "state": disk_result.get('state', 'done'),
+                    "progress": disk_result.get('progress', 100),
+                    "message": disk_result.get('message', 'completado (desde disco)'),
+                    "eta_seconds": 0,
+                    "result": {
+                        "text": text_val,
+                        "segments": segments_val,
+                        "diarization": disk_result.get('diarization') or None,
+                        "model": disk_result.get('whisper_model') or disk_result.get('model')
+                    },
+                    "error": disk_result.get('error') if isinstance(disk_result.get('error'), str) else None
+                }
+                return response
+        except Exception:
+            # Si falla la carga desde disco, continuar y devolver 404 abajo
+            pass
+
         raise HTTPException(status_code=404, detail="Job no encontrado")
 
     remaining = _estimate_remaining(job)
@@ -731,6 +765,47 @@ async def transcribe_with_diarization(
         
         # 5. Estadísticas
         statistics = get_speaker_statistics(aligned_segments)
+
+        # Persistir resultados en disco para que /status pueda localizarlos posteriormente
+        try:
+            results_dir = RESULTS_DIR if 'RESULTS_DIR' in globals() else os.path.join(UPLOAD_DIR, 'results')
+            # ensure_upload_dirs ya deberda haber creado los directorios en startup
+            os.makedirs(results_dir, exist_ok=True)
+
+            job_result = {
+                "job_id": job_id,
+                "text": formatted_text,
+                "segments": aligned_segments,
+                "statistics": statistics,
+                "num_speakers": len(statistics),
+                "output_format": output_format,
+                "timestamp": datetime.utcnow().isoformat(),
+                "whisper_model": WHISPER_MODEL
+            }
+
+            json_path = os.path.join(results_dir, f"{job_id}.json")
+            with open(json_path, 'w', encoding='utf-8') as rf:
+                json.dump(job_result, rf, ensure_ascii=False, indent=2)
+
+            # Guardar también la versión de texto simple para descarga rápida
+            txt_path = os.path.join(results_dir, f"{job_id}.txt")
+            try:
+                with open(txt_path, 'w', encoding='utf-8') as tf:
+                    tf.write(formatted_text)
+            except Exception:
+                pass
+
+            logger.info(f"Resultados guardados en: {json_path}")
+
+            # Actualizar store en memoria si existe (útil justo después para /status en la misma instancia)
+            try:
+                _create_job(job_id, meta={"type": "transcribe-diarize", "filename": file.filename})
+                _update_job(job_id, state='done', message='completado', progress=100, result={"text": formatted_text, "segments": aligned_segments, "statistics": statistics})
+            except Exception:
+                # No crítico si falla actualizar memoria
+                pass
+        except Exception as e:
+            logger.warning(f"No se pudieron persistir los resultados a disco: {e}")
 
         # Manejar descarga en DOCX o PDF
         if download_format in ("docx", "pdf"):

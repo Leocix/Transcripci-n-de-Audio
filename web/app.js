@@ -397,7 +397,30 @@ async function processAudioWithDiarization(audioBlob, source) {
 
 // Mostrar resultados
 function displayResults(result) {
-    resultContent.textContent = result.text;
+    // Extraer texto de diferentes formatos que puede devolver el backend
+    const extractText = (r) => {
+        if (!r) return '';
+        if (typeof r === 'string') return r;
+        // Priorizar campos comunes
+        if (r.text) return r.text;
+        if (r.transcription) return r.transcription;
+        if (r.transcribed) return r.transcribed;
+        // Si hay segments, concatenar sus textos
+        if (Array.isArray(r.segments) && r.segments.length) {
+            return r.segments.map(s => s.text || s.transcription || '').filter(Boolean).join(' ');
+        }
+        // Fall back a JSON string
+        try { return JSON.stringify(r); } catch (e) { return '' }
+    };
+
+    const text = extractText(result);
+    // Reemplazar el contenido del contenedor (mantener estilo simple)
+    if (text) {
+        // Usar pre para conservar saltos de línea
+        resultContent.innerHTML = '<pre style="white-space:pre-wrap;word-break:break-word">' + escapeHtml(text) + '</pre>';
+    } else {
+        resultContent.innerHTML = '<p class="empty-state">En esta sección se mostrará el texto transcrito...</p>';
+    }
     
     // Mostrar estadísticas si están disponibles
     if (result.statistics) {
@@ -432,6 +455,16 @@ function displayResults(result) {
             speakerStatsDiv.appendChild(speakerCard);
         });
     }
+}
+
+// pequeño helper para escapar HTML antes de insertar en innerHTML
+function escapeHtml(unsafe) {
+    return unsafe
+         .replace(/&/g, '&amp;')
+         .replace(/</g, '&lt;')
+         .replace(/>/g, '&gt;')
+         .replace(/"/g, '&quot;')
+         .replace(/'/g, '&#039;');
 }
 
 // Acciones de resultados

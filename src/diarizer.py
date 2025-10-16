@@ -59,7 +59,9 @@ class SpeakerDiarizer:
         try:
             import importlib
             Pipeline = importlib.import_module('pyannote.audio').Pipeline
-            librosa = importlib.import_module('librosa')
+            # Guardar la referencia a librosa en la instancia para poder usarla
+            # desde otros métodos (evita NameError si se accede fuera de __init__)
+            self.librosa = importlib.import_module('librosa')
         except Exception as e:
             logger.error(f"No se pudieron importar pyannote.audio o librosa: {e}")
             raise
@@ -137,10 +139,16 @@ class SpeakerDiarizer:
             # Pre-cargar el audio usando librosa (soporta más formatos vía FFmpeg)
             # Esto evita el error de AudioDecoder y soporta webm, mp3, wav, etc.
             logger.info("Cargando audio con librosa...")
-            
+
             # librosa.load devuelve (waveform, sample_rate)
             # waveform es mono por defecto, necesitamos convertir a stereo si es necesario
-            waveform, sample_rate = librosa.load(audio_path, sr=None, mono=False)
+            # Usar la referencia almacenada en self.librosa (importada en __init__)
+            if not hasattr(self, 'librosa') or self.librosa is None:
+                # Intentar importar de forma perezosa si por alguna razón no está disponible
+                import importlib
+                self.librosa = importlib.import_module('librosa')
+
+            waveform, sample_rate = self.librosa.load(audio_path, sr=None, mono=False)
             
             # Convertir a tensor de PyTorch
             waveform = torch.from_numpy(waveform).float()
