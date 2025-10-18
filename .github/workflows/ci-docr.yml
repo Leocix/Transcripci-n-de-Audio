@@ -22,6 +22,14 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
       - name: Install doctl and authenticate
         uses: digitalocean/action-doctl@v2
         with:
@@ -46,7 +54,13 @@ jobs:
           SHA_TAG=${{ github.sha }}
           IMAGE_MIN="$REG/$REPO:$SHA_TAG"
           echo "Building minimal image: $IMAGE_MIN"
-          docker build --pull -t "$IMAGE_MIN" --build-arg REQUIREMENTS=config/requirements.txt . 2>&1 | tee build-minimal.log
+          docker buildx build --pull \
+            --cache-from=type=local,src=/tmp/.buildx-cache \
+            --cache-to=type=local,dest=/tmp/.buildx-cache-new,mode=max \
+            -t "$IMAGE_MIN" \
+            --build-arg REQUIREMENTS=config/requirements.txt \
+            --load \
+            . 2>&1 | tee build-minimal.log
           docker tag "$IMAGE_MIN" "$REG/$REPO:latest" 2>&1 | tee -a build-minimal.log
           # Push with retries to mitigate transient errors
           for i in 1 2 3; do
@@ -74,7 +88,13 @@ jobs:
           # Create a merged requirements file (minimal + optional) so the full image contains both sets
           cat config/requirements.txt config/requirements-optional.txt > config/requirements-full.txt
           # Build using the combined requirements to ensure FastAPI/uvicorn + torch (and friends) are installed
-          docker build --pull -t "$IMAGE_FULL" --build-arg REQUIREMENTS=config/requirements-full.txt . 2>&1 | tee build-full.log
+          docker buildx build --pull \
+            --cache-from=type=local,src=/tmp/.buildx-cache \
+            --cache-to=type=local,dest=/tmp/.buildx-cache-new,mode=max \
+            -t "$IMAGE_FULL" \
+            --build-arg REQUIREMENTS=config/requirements-full.txt \
+            --load \
+            . 2>&1 | tee build-full.log
           docker tag "$IMAGE_FULL" "$REG/$REPO:full-latest" 2>&1 | tee -a build-full.log
           for i in 1 2 3; do
             docker push "$IMAGE_FULL" 2>&1 | tee -a build-full.log && break || { echo "push failed, retrying ($i)..."; sleep 10; }
@@ -92,6 +112,11 @@ jobs:
 
       - name: Output image locations
         run: echo "Images pushed to registry.digitalocean.com/$DOCR_REGISTRY/$DOCR_REPOSITORY"
+
+      - name: Rotate Docker cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache || true
 
       - name: Fetch DigitalOcean App Platform logs (optional)
         if: env.DO_APP_ID != ''
