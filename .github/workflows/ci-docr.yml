@@ -90,7 +90,7 @@ jobs:
           path: build-minimal.log
 
       - name: (Optional) Build full image (heavy deps) and capture logs
-        if: ${{ env.DO_FULL_IMAGE == 'true' }}
+        if: false  # Disabled by default due to disk space limitations on GitHub runners
         run: |
           set -o pipefail
           REG=registry.digitalocean.com/$DOCR_REGISTRY
@@ -117,7 +117,7 @@ jobs:
           done
 
       - name: Upload full build logs
-        if: ${{ env.DO_FULL_IMAGE == 'true' }}
+        if: false  # Disabled by default
         uses: actions/upload-artifact@v4
         with:
           name: build-full-logs
