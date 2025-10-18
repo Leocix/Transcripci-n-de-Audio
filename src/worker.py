@@ -317,7 +317,7 @@ def process_job_file(path: str):
 
 def main_loop():
     logger.info("Worker arrancando, escaneando jobs en: %s" % JOBS_DIR)
-    # Asegurar directorios antes de arrancar el loop principal (por si no se ejecut f3 startup de FastAPI)
+    # Asegurar directorios antes de arrancar el loop principal (por si no se ejecutf3 startup de FastAPI)
     try:
         if ensure_upload_dirs:
             ensure_upload_dirs(UPLOAD_DIR)
