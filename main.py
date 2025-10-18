@@ -744,6 +744,12 @@ async def transcribe_with_diarization(
         
         # Si se solicita procesamiento asíncrono, encolar y devolver job_id
         if async_process:
+            # IMPORTANTE: Copiar el archivo a una ubicación permanente antes de que FastAPI lo borre
+            permanent_path = os.path.join(UPLOAD_DIR, f"{job_id}{os.path.splitext(file.filename)[1]}")
+            import shutil
+            shutil.copy2(temp_path, permanent_path)
+            logger.info(f"[JOB {job_id}] Archivo copiado a: {permanent_path}")
+            
             _create_job(job_id, meta={"type": "transcribe-diarize", "filename": file.filename})
             _update_job(job_id, state="queued", message="en cola", progress=0)
             
@@ -756,7 +762,7 @@ async def transcribe_with_diarization(
                     transcriber_instance = get_transcriber()
                     
                     logger.info(f"[JOB {job_id}] Transcribiendo audio...")
-                    trans_result = transcriber_instance.transcribe_with_timestamps(temp_path, language=language)
+                    trans_result = transcriber_instance.transcribe_with_timestamps(permanent_path, language=language)
                     _update_job(job_id, progress=40, message="transcripción completada")
                     
                     # 2. Diarizar
@@ -764,7 +770,7 @@ async def transcribe_with_diarization(
                     diarizer_instance = get_diarizer()
                     
                     logger.info(f"[JOB {job_id}] Diarizando...")
-                    dia_segments = diarizer_instance.diarize(temp_path, num_speakers=num_speakers, min_speakers=min_speakers, max_speakers=max_speakers)
+                    dia_segments = diarizer_instance.diarize(permanent_path, num_speakers=num_speakers, min_speakers=min_speakers, max_speakers=max_speakers)
                     _update_job(job_id, progress=70, message="diarización completada")
                     
                     # 3. Combinar
@@ -800,12 +806,13 @@ async def transcribe_with_diarization(
                     logger.exception(f"[JOB {job_id}] Error: {e}")
                     _update_job(job_id, state='error', error=str(e), message='error')
                 finally:
-                    # Limpiar archivo temporal
-                    if os.path.exists(temp_path):
+                    # Limpiar archivo permanente
+                    if os.path.exists(permanent_path):
                         try:
-                            os.remove(temp_path)
-                        except Exception:
-                            pass
+                            os.remove(permanent_path)
+                            logger.info(f"[JOB {job_id}] Archivo eliminado: {permanent_path}")
+                        except Exception as e_rm:
+                            logger.warning(f"[JOB {job_id}] No se pudo eliminar archivo: {e_rm}")
             
             # Usar BackgroundTasks si está disponible, sino threading
             if background_tasks is not None:
