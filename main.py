@@ -157,6 +157,9 @@ def start_worker_thread():
     def _run():
         try:
             logger.info("Embedded worker thread iniciando main_loop()")
+            # Inyectar funciones de actualización en el worker
+            if hasattr(worker_module, 'set_job_update_functions'):
+                worker_module.set_job_update_functions(_update_job)
             worker_module.main_loop()
         except Exception as e:
             logger.exception(f"Worker embebido terminó con error: {e}")

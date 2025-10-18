@@ -41,13 +41,27 @@ sys.path.insert(0, str(PROJECT_ROOT))
 try:
     from .transcriber import AudioTranscriber
     from .diarizer import SpeakerDiarizer
+    from .utils import align_transcription_with_diarization, format_transcript, get_speaker_statistics, renumber_speakers
 except Exception:
     # Fallback a imports absolutos (útil cuando se ejecuta el script directamente)
     from src.transcriber import AudioTranscriber
     from src.diarizer import SpeakerDiarizer
+    from src.utils import align_transcription_with_diarization, format_transcript, get_speaker_statistics, renumber_speakers
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('worker')
+
+# Import de funciones de actualización de jobs desde main.py
+# Estas se inyectarán desde main.py en tiempo de ejecución
+_update_job_func = None
+_get_audio_duration_func = None
+
+def set_job_update_functions(update_func, duration_func=None):
+    """Permite a main.py inyectar las funciones de actualización de jobs."""
+    global _update_job_func, _get_audio_duration_func
+    _update_job_func = update_func
+    _get_audio_duration_func = duration_func
+    logger.info("Funciones de actualización de jobs inyectadas en worker")
 
 # Configurables
 POLL_INTERVAL = int(os.getenv('WORKER_POLL_INTERVAL', '5'))
@@ -159,20 +173,62 @@ def process_job_file(path: str):
 
     transcriber = _transcriber_singleton
 
+    # Helper para actualizar progreso si está disponible
+    def _update_progress(progress, message):
+        if _update_job_func:
+            try:
+                _update_job_func(job_id, progress=progress, message=message)
+            except Exception as e:
+                logger.debug(f"[JOB {job_id}] Error actualizando progreso: {e}")
+
     try:
+        # Actualizar estado inicial
+        _update_progress(5, "Iniciando procesamiento...")
+        
         if task == 'transcribe':
             logger.info(f"[JOB {job_id}] Ejecutando transcripción")
+            _update_progress(10, "Cargando modelo Whisper...")
+            
             res = transcriber.transcribe(local_path)
+            _update_progress(90, "Transcripción completada")
             logger.info(f"[JOB {job_id}] Transcripción completada: {len(res.get('text',''))} chars")
         else:
             logger.info(f"[JOB {job_id}] Ejecutando transcripción + diarización")
+            
+            # Paso 1: Transcribir (10% -> 50%)
+            _update_progress(10, "Cargando modelo Whisper...")
             trans_result = transcriber.transcribe_with_timestamps(local_path)
+            _update_progress(50, "Transcripción completada")
+            logger.info(f"[JOB {job_id}] Transcripción completada: {len(trans_result.get('segments', []))} segmentos")
+            
+            # Paso 2: Diarizar (50% -> 85%)
             try:
+                _update_progress(55, "Cargando modelo de diarización...")
                 diarizer = _diarizer_singleton or SpeakerDiarizer()
-                dia = diarizer.diarize(local_path)
-                logger.info(f"[JOB {job_id}] Diarización completada: {len(dia)} segments")
+                _update_progress(60, "Identificando hablantes...")
+                
+                dia = diarizer.diarize(local_path, num_speakers=num_speakers)
+                _update_progress(85, "Diarización completada")
+                logger.info(f"[JOB {job_id}] Diarización completada: {len(dia)} segmentos")
+                
+                # Paso 3: Combinar resultados (85% -> 95%)
+                _update_progress(88, "Combinando resultados...")
+                aligned_segments = align_transcription_with_diarization(trans_result, dia)
+                
+                # Renumerar hablantes (empezar desde 1)
+                aligned_segments = renumber_speakers(aligned_segments)
+                
+                # Calcular estadísticas
+                statistics = get_speaker_statistics(aligned_segments)
+                _update_progress(95, "Generando estadísticas...")
+                
             except Exception as e:
                 logger.exception(f"[JOB {job_id}] Error en diarización: {e}")
+                # Continuar sin diarización si falla
+                dia = None
+                aligned_segments = None
+                statistics = None
+                
     except Exception as e:
         logger.exception(f"[JOB {job_id}] Error procesando job: {e}")
         # mover a failed si falla la transcripción gravemente
@@ -185,6 +241,8 @@ def process_job_file(path: str):
         return False
 
     # Procesado exitoso: eliminar job file y archivo local
+    _update_progress(98, "Finalizando...")
+    
     try:
         if os.path.exists(path):
             os.remove(path)
@@ -202,15 +260,36 @@ def process_job_file(path: str):
         results_dir = os.path.join(UPLOAD_DIR, 'results')
         os.makedirs(results_dir, exist_ok=True)
 
-        job_result = {
-            'job_id': job_id,
-            'task': task,
-            'whisper_model': whisper_model,
-            'transcription': trans_result.get('text') if 'trans_result' in locals() and isinstance(trans_result, dict) else (res.get('text') if 'res' in locals() and isinstance(res, dict) else None),
-            'segments': trans_result.get('segments') if 'trans_result' in locals() and isinstance(trans_result, dict) else (res.get('segments') if 'res' in locals() and isinstance(res, dict) else None),
-            'diarization': dia if 'dia' in locals() else None,
-            'timestamp': datetime.utcnow().isoformat()
-        }
+        # Preparar resultado final
+        if task == 'transcribe':
+            job_result = {
+                'job_id': job_id,
+                'state': 'done',
+                'progress': 100,
+                'message': 'completado',
+                'task': task,
+                'whisper_model': whisper_model,
+                'text': res.get('text', '') if 'res' in locals() else '',
+                'segments': res.get('segments', []) if 'res' in locals() else [],
+                'timestamp': datetime.utcnow().isoformat()
+            }
+        else:
+            # Formatear texto con hablantes
+            formatted_text = format_transcript(aligned_segments, output_format='text') if aligned_segments else ''
+            
+            job_result = {
+                'job_id': job_id,
+                'state': 'done',
+                'progress': 100,
+                'message': 'completado',
+                'task': task,
+                'whisper_model': whisper_model,
+                'text': formatted_text,
+                'segments': aligned_segments if aligned_segments else [],
+                'statistics': statistics if statistics else {},
+                'num_speakers': len(statistics) if statistics else 0,
+                'timestamp': datetime.utcnow().isoformat()
+            }
 
         json_path = os.path.join(results_dir, f"{job_id}.json")
         with open(json_path, 'w', encoding='utf-8') as jf:
@@ -219,13 +298,17 @@ def process_job_file(path: str):
         # Guardar sólo el texto en un archivo .txt para descarga rápida
         txt_path = os.path.join(results_dir, f"{job_id}.txt")
         try:
-            text_out = job_result.get('transcription') or ''
+            text_out = job_result.get('text') or ''
             with open(txt_path, 'w', encoding='utf-8') as tf:
                 tf.write(text_out)
         except Exception:
             pass
 
         logger.info(f"[JOB {job_id}] Resultados guardados en: {json_path}")
+        
+        # Actualizar estado final
+        _update_progress(100, "Completado")
+        
     except Exception as e:
         logger.warning(f"[JOB {job_id}] No se pudieron guardar resultados: {e}")
 
