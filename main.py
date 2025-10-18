@@ -35,6 +35,7 @@ from src.utils import (
     align_transcription_with_diarization,
     format_transcript,
     get_speaker_statistics,
+    renumber_speakers,
     ensure_upload_dirs,
 )
 # Worker in-process will be importado en startup para evitar fallos de importación
@@ -1023,10 +1024,12 @@ async def convert_video_and_transcribe(
     min_speakers: Optional[int] = Form(None),
     max_speakers: Optional[int] = Form(None),
     output_format: str = Form("text"),
-    bitrate: str = Form("192k")
+    bitrate: str = Form("192k"),
+    background_tasks: BackgroundTasks = None
 ):
     """
-    Convierte un video a audio y lo transcribe con diarización en un solo paso.
+    Convierte un video a audio y lo transcribe con diarización de forma ASÍNCRONA.
+    Retorna inmediatamente un job_id para hacer polling del progreso.
     
     Args:
         file: Archivo de video
@@ -1038,7 +1041,7 @@ async def convert_video_and_transcribe(
         bitrate: Bitrate del audio
     
     Returns:
-        Transcripción con identificación de hablantes
+        job_id para hacer polling en /status/{job_id}
     """
     if not HF_TOKEN:
         raise HTTPException(
@@ -1062,79 +1065,117 @@ async def convert_video_and_transcribe(
     job_id = str(uuid.uuid4())
     file_extension = os.path.splitext(file.filename)[1]
     temp_video_path = os.path.join(UPLOAD_DIR, f"{job_id}{file_extension}")
-    mp3_path = None  # Inicializar para evitar UnboundLocalError
     
     try:
         async with aiofiles.open(temp_video_path, 'wb') as f:
             await f.write(content)
         
-        logger.info(f"Procesando video completo para job_id: {job_id}")
+        logger.info(f"Video guardado para procesamiento async: {job_id}")
         
-        # 1. Convertir a MP3
-        converter = get_video_converter()
-        mp3_filename = f"{job_id}.mp3"
-        mp3_path = converter.convert_video_to_mp3(
-            temp_video_path,
-            output_filename=mp3_filename,
-            bitrate=bitrate
-        )
+        # Crear job y procesarlo en segundo plano
+        _create_job(job_id, meta={"type": "convert-and-transcribe", "filename": file.filename})
+        _update_job(job_id, state="queued", message="Video en cola para conversión", progress=0)
         
-        # 2. Transcribir
-        transcriber_instance = get_transcriber()
-        trans_result = transcriber_instance.transcribe_with_timestamps(
-            mp3_path,
-            language=language
-        )
+        def _process_video_job():
+            mp3_path = None
+            try:
+                _update_job(job_id, state="running", message="Convirtiendo video a audio...", progress=5)
+                
+                # 1. Convertir a MP3
+                converter = get_video_converter()
+                mp3_filename = f"{job_id}.mp3"
+                mp3_path = converter.convert_video_to_mp3(
+                    temp_video_path,
+                    output_filename=mp3_filename,
+                    bitrate=bitrate
+                )
+                _update_job(job_id, progress=15, message="Conversión completada, cargando modelo Whisper...")
+                
+                # 2. Transcribir
+                transcriber_instance = get_transcriber()
+                _update_job(job_id, progress=20, message="Transcribiendo audio...")
+                trans_result = transcriber_instance.transcribe_with_timestamps(
+                    mp3_path,
+                    language=language
+                )
+                _update_job(job_id, progress=55, message="Transcripción completada")
+                
+                # 3. Diarizar
+                _update_job(job_id, progress=60, message="Cargando modelo de diarización...")
+                diarizer_instance = get_diarizer()
+                _update_job(job_id, progress=65, message="Identificando hablantes...")
+                dia_segments = diarizer_instance.diarize(
+                    mp3_path,
+                    num_speakers=num_speakers,
+                    min_speakers=min_speakers,
+                    max_speakers=max_speakers
+                )
+                _update_job(job_id, progress=90, message="Diarización completada")
+                
+                # 4. Combinar y formatear
+                _update_job(job_id, progress=93, message="Combinando resultados...")
+                aligned_segments = align_transcription_with_diarization(trans_result, dia_segments)
+                aligned_segments = renumber_speakers(aligned_segments)
+                formatted_text = format_transcript(aligned_segments, output_format)
+                statistics = get_speaker_statistics(aligned_segments)
+                
+                _update_job(job_id, progress=98, message="Guardando resultados...")
+                
+                # Guardar resultados
+                result = {
+                    "text": formatted_text,
+                    "segments": aligned_segments,
+                    "statistics": statistics,
+                    "num_speakers": len(statistics),
+                    "output_format": output_format,
+                    "source": "video_conversion"
+                }
+                
+                results_dir = os.path.join(UPLOAD_DIR, 'results')
+                os.makedirs(results_dir, exist_ok=True)
+                json_path = os.path.join(results_dir, f"{job_id}.json")
+                with open(json_path, 'w', encoding='utf-8') as jf:
+                    json.dump(result, jf, ensure_ascii=False, indent=2)
+                
+                _update_job(job_id, progress=100, state="done", message="Completado", result=result)
+                logger.info(f"[JOB {job_id}] Video procesado exitosamente")
+                
+            except Exception as e:
+                logger.exception(f"[JOB {job_id}] Error procesando video: {e}")
+                _update_job(job_id, state="error", error=str(e), message=f"Error: {str(e)}")
+            finally:
+                # Limpiar archivos temporales
+                for temp_file in [temp_video_path, mp3_path]:
+                    if temp_file and os.path.exists(temp_file):
+                        try:
+                            os.remove(temp_file)
+                            logger.info(f"[JOB {job_id}] Eliminado: {temp_file}")
+                        except Exception as e:
+                            logger.warning(f"[JOB {job_id}] No se pudo eliminar {temp_file}: {e}")
         
-        # 3. Diarizar
-        diarizer_instance = get_diarizer()
-        dia_segments = diarizer_instance.diarize(
-            mp3_path,
-            num_speakers=num_speakers,
-            min_speakers=min_speakers,
-            max_speakers=max_speakers
-        )
-        
-        # 4. Combinar
-        aligned_segments = align_transcription_with_diarization(
-            trans_result,
-            dia_segments
-        )
-        
-        # 5. Formatear
-        formatted_text = format_transcript(aligned_segments, output_format)
-        
-        # 6. Estadísticas
-        statistics = get_speaker_statistics(aligned_segments)
+        # Ejecutar en segundo plano
+        if background_tasks:
+            background_tasks.add_task(_process_video_job)
+        else:
+            import threading
+            t = threading.Thread(target=_process_video_job, daemon=True)
+            t.start()
         
         return {
             "job_id": job_id,
-            "text": formatted_text,
-            "segments": aligned_segments,
-            "statistics": statistics,
-            "num_speakers": len(statistics),
-            "output_format": output_format,
-            "source": "video_conversion"
+            "message": "Video encolado para procesamiento",
+            "status_url": f"/status/{job_id}"
         }
         
     except Exception as e:
-        logger.error(f"Error al procesar video: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-    
-    finally:
+        logger.error(f"Error al encolar video: {e}", exc_info=True)
+        # Limpiar archivo temporal si falla
         if os.path.exists(temp_video_path):
             try:
                 os.remove(temp_video_path)
-                logger.info(f"Archivo temporal de video eliminado: {temp_video_path}")
-            except Exception as e:
-                logger.warning(f"No se pudo eliminar video temporal: {e}")
-        
-        if mp3_path and os.path.exists(mp3_path):
-            try:
-                os.remove(mp3_path)
-                logger.info(f"Archivo temporal MP3 eliminado: {mp3_path}")
-            except Exception as e:
-                logger.warning(f"No se pudo eliminar MP3 temporal: {e}")
+            except Exception:
+                pass
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/models", tags=["General"])
