@@ -14,6 +14,7 @@ let currentAudioBlob = null;
 let audioContext = null;
 let analyser = null;
 let animationId = null;
+let lastTranscriptionResult = null; // Almacenar último resultado para descarga
 
 // Elementos del DOM
 const btnRecord = document.getElementById('btnRecord');
@@ -21,6 +22,8 @@ const btnStop = document.getElementById('btnStop');
 const btnProcess = document.getElementById('btnProcess');
 const btnCopy = document.getElementById('btnCopy');
 const btnDownload = document.getElementById('btnDownload');
+const btnDownloadPDF = document.getElementById('btnDownloadPDF');
+const btnDownloadWord = document.getElementById('btnDownloadWord');
 const btnClear = document.getElementById('btnClear');
 const timerDisplay = document.getElementById('timer');
 const fileInput = document.getElementById('fileInput');
@@ -292,57 +295,133 @@ btnProcess.addEventListener('click', async () => {
 
 // Procesar audio con diarización
 async function processAudioWithDiarization(audioBlob, source) {
-    const formData = new FormData();
-    
-    // Detectar si es video
+    // Detectar si es video y preparar metadatos
     const isVideo = audioBlob.type.startsWith('video/');
     const fileName = audioBlob.name || (isVideo ? 'video.mp4' : 'audio.webm');
-    formData.append('file', audioBlob, fileName);
-    
-    // Obtener configuración según la fuente
+
     const language = document.getElementById(source === 'grabacion' ? 'language' : 'fileLanguage').value;
     const minSpeakers = document.getElementById(source === 'grabacion' ? 'minSpeakers' : 'fileMinSpeakers').value;
     const maxSpeakers = document.getElementById(source === 'grabacion' ? 'maxSpeakers' : 'fileMaxSpeakers').value;
     const outputFormat = document.getElementById(source === 'grabacion' ? 'outputFormat' : 'fileOutputFormat').value;
 
-    formData.append('language', language);
-    formData.append('min_speakers', minSpeakers);
-    formData.append('max_speakers', maxSpeakers);
-    formData.append('output_format', outputFormat);
-    
-    // Si es video, agregar bitrate
-    if (isVideo) {
-        const bitrate = document.getElementById('videoBitrate')?.value || '192k';
-        formData.append('bitrate', bitrate);
-    }
-
     const endpoint = isVideo ? '/convert-and-transcribe' : '/transcribe-diarize';
     const message = isVideo ? 
         'Convirtiendo video y procesando audio...\nEsto puede tomar varios minutos.' :
         'Procesando audio con diarización...\nEsto puede tomar varios minutos.';
-    
+
     showLoading(message);
 
+    // 1) Intentar flujo presign -> upload directo a storage -> crear job
     try {
-        // Enviar como job asíncrono para poder mostrar progreso
-        formData.append('async_process', 'true');
+        const presignFd = new FormData();
+        presignFd.append('filename', fileName);
+        const presignResp = await fetch(`${API_BASE_URL}/presign`, { method: 'POST', body: presignFd });
 
-        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-            method: 'POST',
-            body: formData
-        });
+        if (presignResp.ok) {
+            const presignData = await presignResp.json();
+            const uploadUrl = presignData.upload_url;
+            // presignData may include a presigned GET URL (get_url) for worker download
+            const objectUrl = presignData.get_url || presignData.object_url;
 
+            // Subir directamente al storage (PUT)
+            const putResp = await fetch(uploadUrl, {
+                method: 'PUT',
+                body: audioBlob,
+                headers: {
+                    'Content-Type': audioBlob.type || 'application/octet-stream'
+                }
+            });
+
+            if (!putResp.ok) {
+                throw new Error(`Upload failed: ${putResp.status} ${putResp.statusText}`);
+            }
+
+            // Crear job indicando la URL del objeto
+            const createResp = await fetch(`${API_BASE_URL}/jobs/create`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ source_url: objectUrl, task: 'transcribe-diarize', whisper_model: null })
+            });
+
+            if (!createResp.ok) {
+                throw new Error(`Create job failed: ${createResp.status} ${createResp.statusText}`);
+            }
+
+            const createData = await createResp.json();
+            if (createData.job_id) {
+                const jobId = createData.job_id;
+                showLoading(`Trabajo encolado (job: ${jobId}). Esperando inicio...`);
+                // Poll cada 3s
+                const pollInterval = 3000;
+                const poll = setInterval(async () => {
+                    try {
+                        const st = await fetch(`${API_BASE_URL}/status/${jobId}`);
+                        if (!st.ok) throw new Error(`Status ${st.status}`);
+                        const sdata = await st.json();
+
+                        const progress = sdata.progress || 0;
+                        const etaText = sdata.eta_seconds ? formatDuration(sdata.eta_seconds) : '';
+                        showLoading(sdata.message || 'Procesando...');
+                        updateProgress(progress, etaText ? `Tiempo restante: ${etaText}` : '');
+
+                        if (sdata.state === 'done') {
+                            clearInterval(poll);
+                            hideLoading();
+                            if (sdata.result) {
+                                displayResults(sdata.result);
+                                showToast('success', 'Transcripción completada.');
+                                document.querySelector('[data-tab="resultados"]').click();
+                            } else {
+                                showToast('error', 'Job completado pero sin resultado');
+                            }
+                        } else if (sdata.state === 'error') {
+                            clearInterval(poll);
+                            hideLoading();
+                            showToast('error', `Error en el job: ${sdata.error || sdata.message}`);
+                        }
+
+                    } catch (err) {
+                        clearInterval(poll);
+                        hideLoading();
+                        console.error('Error al consultar status del job:', err);
+                        showToast('error', 'No se pudo obtener el estado del job');
+                    }
+                }, pollInterval);
+
+                return;
+            }
+        }
+
+        // Si presign no es soportado o algo falló, caeremos al flujo convencional
+    } catch (err) {
+        console.warn('Presign flow failed, falling back to direct upload:', err);
+    }
+
+    // 2) Fallback: comportamiento existente (subir al backend y encolar async)
+    try {
+        const fd = new FormData();
+        fd.append('file', audioBlob, fileName);
+        fd.append('language', language);
+        fd.append('min_speakers', minSpeakers);
+        fd.append('max_speakers', maxSpeakers);
+        fd.append('output_format', outputFormat);
+        if (isVideo) {
+            const bitrate = document.getElementById('videoBitrate')?.value || '192k';
+            fd.append('bitrate', bitrate);
+        }
+
+        // Enviar como job asíncrono
+        fd.append('async_process', 'true');
+
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, { method: 'POST', body: fd });
         if (!response.ok) {
             throw new Error(`Error ${response.status}: ${response.statusText}`);
         }
-
         const data = await response.json();
 
-        // Si se devolvió job_id, iniciar polling al endpoint /status/{job_id}
         if (data.job_id) {
             const jobId = data.job_id;
             showLoading(`Trabajo encolado (job: ${jobId}). Esperando inicio...`);
-            // Poll cada 3s
             const pollInterval = 3000;
             const poll = setInterval(async () => {
                 try {
@@ -350,9 +429,10 @@ async function processAudioWithDiarization(audioBlob, source) {
                     if (!st.ok) throw new Error(`Status ${st.status}`);
                     const sdata = await st.json();
 
-                    // Actualizar mensaje de carga con progreso y ETA
-                    const etaText = sdata.eta_seconds ? ` - ETA: ${formatDuration(sdata.eta_seconds)}` : '';
-                    showLoading(`Progreso: ${sdata.progress}% - ${sdata.message}${etaText}`);
+                    const progress = sdata.progress || 0;
+                    const etaText = sdata.eta_seconds ? formatDuration(sdata.eta_seconds) : '';
+                    showLoading(sdata.message || 'Procesando...');
+                    updateProgress(progress, etaText ? `Tiempo restante: ${etaText}` : '');
 
                     if (sdata.state === 'done') {
                         clearInterval(poll);
@@ -384,11 +464,10 @@ async function processAudioWithDiarization(audioBlob, source) {
         // Si la API devolvió el resultado directamente (sin job), mostrarlo
         displayResults(data);
         showToast('success', `Transcripción completada. ${data.num_speakers || 0} hablantes detectados.`);
-        // Cambiar a pestaña de resultados
         document.querySelector('[data-tab="resultados"]').click();
 
     } catch (error) {
-        console.error('Error al procesar:', error);
+        console.error('Error al procesar (fallback):', error);
         showToast('error', `Error al procesar el archivo: ${error.message}`);
     } finally {
         hideLoading();
@@ -397,6 +476,9 @@ async function processAudioWithDiarization(audioBlob, source) {
 
 // Mostrar resultados
 function displayResults(result) {
+    // Guardar resultado para descarga
+    lastTranscriptionResult = result;
+    
     // Extraer texto de diferentes formatos que puede devolver el backend
     const extractText = (r) => {
         if (!r) return '';
@@ -488,9 +570,74 @@ function initResultActions() {
         showToast('success', 'Transcripción descargada');
     });
 
+    btnDownloadPDF.addEventListener('click', async () => {
+        if (!lastTranscriptionResult) {
+            showToast('error', 'No hay transcripción disponible para descargar');
+            return;
+        }
+        
+        try {
+            showLoading('Generando PDF...');
+            const response = await fetch(`${API_BASE_URL}/download/pdf`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(lastTranscriptionResult)
+            });
+            
+            if (!response.ok) throw new Error(`Error ${response.status}`);
+            
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `transcripcion_${new Date().getTime()}.pdf`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('success', 'PDF descargado correctamente');
+        } catch (error) {
+            console.error('Error al descargar PDF:', error);
+            showToast('error', `Error al generar PDF: ${error.message}`);
+        } finally {
+            hideLoading();
+        }
+    });
+
+    btnDownloadWord.addEventListener('click', async () => {
+        if (!lastTranscriptionResult) {
+            showToast('error', 'No hay transcripción disponible para descargar');
+            return;
+        }
+        
+        try {
+            showLoading('Generando documento Word...');
+            const response = await fetch(`${API_BASE_URL}/download/word`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(lastTranscriptionResult)
+            });
+            
+            if (!response.ok) throw new Error(`Error ${response.status}`);
+            
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `transcripcion_${new Date().getTime()}.docx`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('success', 'Documento Word descargado correctamente');
+        } catch (error) {
+            console.error('Error al descargar Word:', error);
+            showToast('error', `Error al generar documento Word: ${error.message}`);
+        } finally {
+            hideLoading();
+        }
+    });
+
     btnClear.addEventListener('click', () => {
         resultContent.innerHTML = '<p class="empty-state">En esta sección se mostrará el texto transcrito...</p>';
         document.getElementById('statistics').style.display = 'none';
+        lastTranscriptionResult = null;
         showToast('info', 'Resultados limpiados');
     });
 }
@@ -499,10 +646,22 @@ function initResultActions() {
 function showLoading(message) {
     loadingMessage.textContent = message;
     loadingOverlay.classList.add('active');
+    updateProgress(0, '');
 }
 
 function hideLoading() {
     loadingOverlay.classList.remove('active');
+    updateProgress(0, '');
+}
+
+function updateProgress(percent, eta) {
+    const progressFill = document.getElementById('progressFill');
+    const progressPercent = document.getElementById('progressPercent');
+    const progressETA = document.getElementById('progressETA');
+    
+    if (progressFill) progressFill.style.width = `${percent}%`;
+    if (progressPercent) progressPercent.textContent = `${percent}%`;
+    if (progressETA) progressETA.textContent = eta || '';
 }
 
 function showToast(type, message) {

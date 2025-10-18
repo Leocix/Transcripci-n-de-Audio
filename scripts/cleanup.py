@@ -1,7 +1,6 @@
 """Limpieza de uploads/resultados antiguos.
 Uso: python scripts/cleanup.py --days 7
 """
-import os
 import argparse
 import time
 from pathlib import Path

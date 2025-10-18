@@ -2,7 +2,6 @@
 """
 Script para verificar que todas las configuraciones estén correctas
 """
-import os
 import sys
 from pathlib import Path
 

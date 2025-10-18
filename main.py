@@ -4,7 +4,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
-from pydantic import BaseModel
 import json
 import requests
 import os
@@ -80,6 +79,11 @@ def start_worker_thread():
     """
     import threading
     global worker_module
+
+    # Permitir desactivar el worker embebido mediante variable de entorno (útil durante pruebas locales)
+    if os.getenv('DISABLE_EMBEDDED_WORKER', '').lower() in ('1', 'true', 'yes'):
+        logger.info('DISABLE_EMBEDDED_WORKER set -> no se iniciará el worker embebido')
+        return
 
     # Importar el módulo del worker aquí y registrar cualquier excepción de import
     if worker_module is None:
@@ -486,6 +490,7 @@ async def debug_info():
 class PresignResponse(BaseModel):
     upload_url: str
     object_url: str
+    get_url: Optional[str] = None
 
 
 @app.post('/presign', response_model=PresignResponse, tags=["Uploads"])
@@ -527,7 +532,17 @@ async def presign_upload(filename: str = Form(...)):
         raise HTTPException(status_code=500, detail=f"Error generando presigned URL: {e}")
 
     object_url = f"https://{SPACES_BUCKET}.{SPACES_REGION}.digitaloceanspaces.com/{key}"
-    return PresignResponse(upload_url=url, object_url=object_url)
+    # Generar también una URL presignada para GET para que el worker pueda descargar sin hacer público el objeto
+    try:
+        get_url = client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': SPACES_BUCKET, 'Key': key},
+            ExpiresIn=3600
+        )
+    except Exception:
+        get_url = None
+
+    return PresignResponse(upload_url=url, object_url=object_url, get_url=get_url)
 
 
 class JobCreate(BaseModel):
@@ -653,6 +668,7 @@ async def transcribe_with_diarization(
     max_speakers: Optional[int] = Form(None),
     output_format: str = Form("text"),
     download_format: Optional[str] = Form(None),
+    async_process: bool = Form(False),
     background_tasks: BackgroundTasks = None
 ):
     """
@@ -722,6 +738,75 @@ async def transcribe_with_diarization(
         logger.info(f"Archivo guardado: {temp_path}")
         logger.info(f"Tamaño: {len(content) / 1024:.2f} KB")
         
+        # Si se solicita procesamiento asíncrono, encolar y devolver job_id
+        if async_process and background_tasks is not None:
+            _create_job(job_id, meta={"type": "transcribe-diarize", "filename": file.filename})
+            _update_job(job_id, state="queued", message="en cola", progress=0)
+            
+            def _run_diarize_job():
+                try:
+                    _update_job(job_id, state="running", message="iniciando", progress=5)
+                    
+                    # 1. Transcribir
+                    logger.info(f"[JOB {job_id}] Cargando modelo Whisper...")
+                    transcriber_instance = get_transcriber()
+                    
+                    logger.info(f"[JOB {job_id}] Transcribiendo audio...")
+                    trans_result = transcriber_instance.transcribe_with_timestamps(temp_path, language=language)
+                    _update_job(job_id, progress=40, message="transcripción completada")
+                    
+                    # 2. Diarizar
+                    logger.info(f"[JOB {job_id}] Cargando diarizador...")
+                    diarizer_instance = get_diarizer()
+                    
+                    logger.info(f"[JOB {job_id}] Diarizando...")
+                    dia_segments = diarizer_instance.diarize(temp_path, num_speakers=num_speakers, min_speakers=min_speakers, max_speakers=max_speakers)
+                    _update_job(job_id, progress=70, message="diarización completada")
+                    
+                    # 3. Combinar
+                    aligned_segments = align_transcription_with_diarization(trans_result, dia_segments)
+                    formatted_text = format_transcript(aligned_segments, output_format)
+                    statistics = get_speaker_statistics(aligned_segments)
+                    
+                    # Persistir resultados
+                    results_dir = RESULTS_DIR if 'RESULTS_DIR' in globals() else os.path.join(UPLOAD_DIR, 'results')
+                    os.makedirs(results_dir, exist_ok=True)
+                    job_result = {
+                        "job_id": job_id,
+                        "text": formatted_text,
+                        "segments": aligned_segments,
+                        "statistics": statistics,
+                        "num_speakers": len(statistics),
+                        "output_format": output_format,
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "whisper_model": WHISPER_MODEL
+                    }
+                    json_path = os.path.join(results_dir, f"{job_id}.json")
+                    with open(json_path, 'w', encoding='utf-8') as rf:
+                        json.dump(job_result, rf, ensure_ascii=False, indent=2)
+                    
+                    txt_path = os.path.join(results_dir, f"{job_id}.txt")
+                    with open(txt_path, 'w', encoding='utf-8') as tf:
+                        tf.write(formatted_text)
+                    
+                    # Actualizar job en memoria
+                    _update_job(job_id, state='done', message='completado', progress=100, result={"text": formatted_text, "segments": aligned_segments, "statistics": statistics, "num_speakers": len(statistics)})
+                    
+                except Exception as e:
+                    logger.exception(f"[JOB {job_id}] Error: {e}")
+                    _update_job(job_id, state='error', error=str(e), message='error')
+                finally:
+                    # Limpiar archivo temporal
+                    if os.path.exists(temp_path):
+                        try:
+                            os.remove(temp_path)
+                        except Exception:
+                            pass
+            
+            background_tasks.add_task(_run_diarize_job)
+            return {"job_id": job_id, "status": "queued"}
+        
+        # Procesamiento síncrono (comportamiento anterior)
         # 1. Transcribir
         logger.info("Paso 1/5: Cargando modelo Whisper...")
         transcriber_instance = get_transcriber()
@@ -1131,6 +1216,215 @@ async def debug_remove_job_file(job_id: str):
     except Exception as e:
         logger.exception(f"Error moviendo job file {job_file}: {e}")
         return {"ok": False, "reason": str(e)}
+
+
+# Endpoints de descarga en formatos PDF y Word
+@app.post('/download/pdf', tags=["Downloads"])
+async def download_pdf(result: dict):
+    """
+    Genera un PDF a partir del resultado de transcripción.
+    
+    Args:
+        result: Objeto JSON con el resultado de la transcripción
+    
+    Returns:
+        Archivo PDF descargable
+    """
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.pdfgen import canvas as pdf_canvas
+        from reportlab.lib.units import inch
+        import io
+        
+        # Extraer texto del resultado
+        def extract_text(r):
+            if isinstance(r, str):
+                return r
+            if isinstance(r, dict):
+                if 'text' in r:
+                    return r['text']
+                if 'transcription' in r:
+                    return r['transcription']
+                if 'segments' in r and isinstance(r['segments'], list):
+                    return '\n\n'.join(seg.get('text', '') for seg in r['segments'])
+            return str(r)
+        
+        text = extract_text(result)
+        
+        # Crear PDF en memoria
+        buffer = io.BytesIO()
+        c = pdf_canvas.Canvas(buffer, pagesize=letter)
+        width, height = letter
+        
+        # Título
+        c.setFont("Helvetica-Bold", 16)
+        c.drawString(inch, height - inch, "Transcripción de Audio")
+        
+        # Fecha
+        c.setFont("Helvetica", 10)
+        c.drawString(inch, height - inch - 0.3*inch, f"Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+        
+        # Contenido
+        c.setFont("Helvetica", 11)
+        y_position = height - inch - 0.7*inch
+        
+        # Dividir texto en líneas y páginas
+        lines = text.split('\n')
+        for line in lines:
+            # Wrap texto largo
+            if len(line) > 80:
+                words = line.split()
+                current_line = ""
+                for word in words:
+                    test_line = current_line + word + " "
+                    if len(test_line) > 80:
+                        if current_line:
+                            c.drawString(inch, y_position, current_line.strip())
+                            y_position -= 0.2*inch
+                            if y_position < inch:
+                                c.showPage()
+                                c.setFont("Helvetica", 11)
+                                y_position = height - inch
+                        current_line = word + " "
+                    else:
+                        current_line = test_line
+                
+                if current_line:
+                    c.drawString(inch, y_position, current_line.strip())
+                    y_position -= 0.2*inch
+            else:
+                c.drawString(inch, y_position, line)
+                y_position -= 0.2*inch
+            
+            # Nueva página si es necesario
+            if y_position < inch:
+                c.showPage()
+                c.setFont("Helvetica", 11)
+                y_position = height - inch
+        
+        # Estadísticas si existen
+        if isinstance(result, dict) and 'statistics' in result:
+            c.showPage()
+            c.setFont("Helvetica-Bold", 14)
+            y_position = height - inch
+            c.drawString(inch, y_position, "Estadísticas de Hablantes")
+            y_position -= 0.4*inch
+            
+            c.setFont("Helvetica", 10)
+            for speaker, stats in result['statistics'].items():
+                c.drawString(inch, y_position, f"{speaker}:")
+                y_position -= 0.2*inch
+                c.drawString(inch + 0.3*inch, y_position, f"Tiempo total: {stats.get('total_time', 0):.1f}s")
+                y_position -= 0.15*inch
+                c.drawString(inch + 0.3*inch, y_position, f"Palabras: {stats.get('total_words', 0)}")
+                y_position -= 0.15*inch
+                c.drawString(inch + 0.3*inch, y_position, f"Participación: {stats.get('time_percentage', 0):.1f}%")
+                y_position -= 0.3*inch
+        
+        c.save()
+        buffer.seek(0)
+        
+        from fastapi.responses import Response
+        return Response(
+            content=buffer.getvalue(),
+            media_type='application/pdf',
+            headers={
+                'Content-Disposition': f'attachment; filename="transcripcion_{datetime.now().strftime("%Y%m%d_%H%M%S")}.pdf"'
+            }
+        )
+    
+    except Exception as e:
+        logger.error(f"Error generando PDF: {e}")
+        raise HTTPException(status_code=500, detail=f"Error generando PDF: {str(e)}")
+
+
+@app.post('/download/word', tags=["Downloads"])
+async def download_word(result: dict):
+    """
+    Genera un documento Word (.docx) a partir del resultado de transcripción.
+    
+    Args:
+        result: Objeto JSON con el resultado de la transcripción
+    
+    Returns:
+        Archivo DOCX descargable
+    """
+    try:
+        from docx import Document
+        from docx.shared import Pt
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        import io
+        
+        # Extraer texto del resultado
+        def extract_text(r):
+            if isinstance(r, str):
+                return r
+            if isinstance(r, dict):
+                if 'text' in r:
+                    return r['text']
+                if 'transcription' in r:
+                    return r['transcription']
+                if 'segments' in r and isinstance(r['segments'], list):
+                    return '\n\n'.join(seg.get('text', '') for seg in r['segments'])
+            return str(r)
+        
+        text = extract_text(result)
+        
+        # Crear documento
+        doc = Document()
+        
+        # Título
+        title = doc.add_heading('Transcripción de Audio', 0)
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        # Fecha
+        date_para = doc.add_paragraph()
+        date_para.add_run(f"Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}").italic = True
+        date_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        
+        # Separador
+        doc.add_paragraph()
+        
+        # Contenido de la transcripción
+        doc.add_heading('Transcripción', 1)
+        
+        # Agregar texto por párrafos
+        paragraphs = text.split('\n\n')
+        for para_text in paragraphs:
+            if para_text.strip():
+                p = doc.add_paragraph(para_text.strip())
+                p.style.font.size = Pt(11)
+        
+        # Estadísticas si existen
+        if isinstance(result, dict) and 'statistics' in result:
+            doc.add_page_break()
+            doc.add_heading('Estadísticas de Hablantes', 1)
+            
+            for speaker, stats in result['statistics'].items():
+                doc.add_heading(speaker, 2)
+                doc.add_paragraph(f"Tiempo total: {stats.get('total_time', 0):.1f} segundos")
+                doc.add_paragraph(f"Palabras: {stats.get('total_words', 0)}")
+                doc.add_paragraph(f"Participación: {stats.get('time_percentage', 0):.1f}%")
+                doc.add_paragraph(f"Segmentos: {stats.get('segment_count', 0)}")
+                doc.add_paragraph()
+        
+        # Guardar en memoria
+        buffer = io.BytesIO()
+        doc.save(buffer)
+        buffer.seek(0)
+        
+        from fastapi.responses import Response
+        return Response(
+            content=buffer.getvalue(),
+            media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            headers={
+                'Content-Disposition': f'attachment; filename="transcripcion_{datetime.now().strftime("%Y%m%d_%H%M%S")}.docx"'
+            }
+        )
+    
+    except Exception as e:
+        logger.error(f"Error generando documento Word: {e}")
+        raise HTTPException(status_code=500, detail=f"Error generando documento Word: {str(e)}")
 
 
 # Manejo de errores

@@ -11,7 +11,6 @@ import time
 import json
 import logging
 import requests
-import shutil
 from pathlib import Path
 from datetime import datetime
 import threading

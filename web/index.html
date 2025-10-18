@@ -170,7 +170,13 @@
                                 📋 Copiar
                             </button>
                             <button class="btn-action" id="btnDownload">
-                                💾 Descargar
+                                💾 TXT
+                            </button>
+                            <button class="btn-action" id="btnDownloadPDF">
+                                📄 PDF
+                            </button>
+                            <button class="btn-action" id="btnDownloadWord">
+                                📝 Word
                             </button>
                             <button class="btn-action" id="btnClear">
                                 🗑️ Limpiar
@@ -192,8 +198,19 @@
 
         <!-- Loading Overlay -->
         <div class="loading-overlay" id="loadingOverlay">
-            <div class="spinner"></div>
-            <p id="loadingMessage">Procesando audio...</p>
+            <div class="loading-content">
+                <div class="spinner"></div>
+                <p id="loadingMessage">Procesando audio...</p>
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <div class="progress-info">
+                        <span id="progressPercent">0%</span>
+                        <span id="progressETA"></span>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Toast Notifications -->

@@ -14,7 +14,7 @@ pydub>=0.25.1
 soundfile>=0.12.1
 
 # Document export (optional: include if you need DOCX/PDF exports)
-# python-docx>=0.8.12
-# reportlab>=4.0.0
+python-docx>=0.8.11
+reportlab>=4.0.0
 
 # For heavy ML (whisper/torch/pyannote) install `config/requirements-optional.txt`

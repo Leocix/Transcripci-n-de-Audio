@@ -1,7 +1,7 @@
 """
 Utilidades para combinar transcripción con diarización
 """
-from typing import List, Dict, Tuple
+from typing import List, Dict
 import logging
 
 logging.basicConfig(level=logging.INFO)
