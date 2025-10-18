@@ -743,7 +743,7 @@ async def transcribe_with_diarization(
         logger.info(f"Tamaño: {len(content) / 1024:.2f} KB")
         
         # Si se solicita procesamiento asíncrono, encolar y devolver job_id
-        if async_process and background_tasks is not None:
+        if async_process:
             _create_job(job_id, meta={"type": "transcribe-diarize", "filename": file.filename})
             _update_job(job_id, state="queued", message="en cola", progress=0)
             
@@ -807,7 +807,14 @@ async def transcribe_with_diarization(
                         except Exception:
                             pass
             
-            background_tasks.add_task(_run_diarize_job)
+            # Usar BackgroundTasks si está disponible, sino threading
+            if background_tasks is not None:
+                background_tasks.add_task(_run_diarize_job)
+            else:
+                import threading
+                thread = threading.Thread(target=_run_diarize_job, daemon=True)
+                thread.start()
+            
             return {"job_id": job_id, "status": "queued"}
         
         # Procesamiento síncrono (comportamiento anterior)
