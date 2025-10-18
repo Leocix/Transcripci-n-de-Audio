@@ -69,6 +69,14 @@ archive/
 *.pem
 secrets.json
 
+# Archivos de especificación de DigitalOcean con tokens
+*_spec.json
+spec_*.json
+*_app.json
+do_*.json
+worker_*.json
+current_*.json
+
 # Modelos descargados (muy pesados para git)
 models/
 *.pt
