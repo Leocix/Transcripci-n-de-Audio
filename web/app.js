@@ -410,8 +410,8 @@ async function processAudioWithDiarization(audioBlob, source) {
             fd.append('bitrate', bitrate);
         }
 
-        // Enviar como job asíncrono
-        fd.append('async_process', 'true');
+        // Enviar como job asíncrono - IMPORTANTE: debe ser boolean true
+        fd.append('async_process', true);
 
         const response = await fetch(`${API_BASE_URL}${endpoint}`, { method: 'POST', body: fd });
         if (!response.ok) {
