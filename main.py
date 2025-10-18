@@ -744,10 +744,14 @@ async def transcribe_with_diarization(
         
         # Si se solicita procesamiento asíncrono, encolar y devolver job_id
         if async_process:
-            # El archivo ya está guardado en temp_path, no necesitamos copiarlo
-            # Solo aseguramos que la ruta es la correcta para el worker
-            audio_file_path = temp_path
-            logger.info(f"[JOB {job_id}] Archivo listo para procesamiento: {audio_file_path}")
+            # Copiar el archivo a una ubicación permanente para que el worker pueda accederlo
+            # FastAPI elimina el archivo temporal cuando el request termina, pero el worker
+            # se ejecuta en background y necesita el archivo
+            permanent_path = os.path.join(UPLOAD_DIR, f"job_{job_id}{file_extension}")
+            import shutil
+            shutil.copy2(temp_path, permanent_path)
+            audio_file_path = permanent_path
+            logger.info(f"[JOB {job_id}] Archivo copiado para procesamiento: {audio_file_path}")
             
             _create_job(job_id, meta={"type": "transcribe-diarize", "filename": file.filename})
             _update_job(job_id, state="queued", message="en cola", progress=0)
