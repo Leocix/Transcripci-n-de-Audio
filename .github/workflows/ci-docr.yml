@@ -16,6 +16,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Free up disk space
+        run: |
+          echo "=== Disk space before cleanup ==="
+          df -h
+          echo "=== Cleaning up ==="
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          sudo docker system prune -af --volumes
+          echo "=== Disk space after cleanup ==="
+          df -h
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
 
@@ -113,10 +126,12 @@ jobs:
       - name: Output image locations
         run: echo "Images pushed to registry.digitalocean.com/$DOCR_REGISTRY/$DOCR_REPOSITORY"
 
-      - name: Rotate Docker cache
+      - name: Move new Docker cache
         run: |
           rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache || true
+          if [ -d /tmp/.buildx-cache-new ]; then
+            mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+          fi
 
       - name: Fetch DigitalOcean App Platform logs (optional)
         if: env.DO_APP_ID != ''
