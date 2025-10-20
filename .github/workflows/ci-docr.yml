@@ -71,17 +71,10 @@ jobs:
             --cache-from=type=local,src=/tmp/.buildx-cache \
             --cache-to=type=local,dest=/tmp/.buildx-cache-new,mode=max \
             -t "$IMAGE_MIN" \
+            -t "$REG/$REPO:latest" \
             --build-arg REQUIREMENTS=config/requirements.txt \
-            --load \
+            --push \
             . 2>&1 | tee build-minimal.log
-          docker tag "$IMAGE_MIN" "$REG/$REPO:latest" 2>&1 | tee -a build-minimal.log
-          # Push with retries to mitigate transient errors
-          for i in 1 2 3; do
-            docker push "$IMAGE_MIN" 2>&1 | tee -a build-minimal.log && break || { echo "push failed, retrying ($i)..."; sleep 5; }
-          done
-          for i in 1 2 3; do
-            docker push "$REG/$REPO:latest" 2>&1 | tee -a build-minimal.log && break || { echo "push failed, retrying ($i)..."; sleep 5; }
-          done
 
       - name: Upload minimal build logs
         uses: actions/upload-artifact@v4
@@ -115,16 +108,10 @@ jobs:
             --cache-from=type=local,src=/tmp/.buildx-cache \
             --cache-to=type=local,dest=/tmp/.buildx-cache-new,mode=max \
             -t "$IMAGE_FULL" \
+            -t "$REG/$REPO:full-latest" \
             --build-arg REQUIREMENTS=config/requirements-full.txt \
-            --load \
+            --push \
             . 2>&1 | tee build-full.log
-          docker tag "$IMAGE_FULL" "$REG/$REPO:full-latest" 2>&1 | tee -a build-full.log
-          for i in 1 2 3; do
-            docker push "$IMAGE_FULL" 2>&1 | tee -a build-full.log && break || { echo "push failed, retrying ($i)..."; sleep 10; }
-          done
-          for i in 1 2 3; do
-            docker push "$REG/$REPO:full-latest" 2>&1 | tee -a build-full.log && break || { echo "push failed, retrying ($i)..."; sleep 10; }
-          done
 
       - name: Upload full build logs
         if: true  # Temporarily enabled
