@@ -85,6 +85,13 @@ models/
 *.bin
 *.safetensors
 
+# Generated full requirements and build logs
+config/requirements-full.txt
+build-*.log
+*.cache
+.cache/
+.pytest_cache/
+
 # Archivos de audio/video de prueba
 test_*.mp3
 test_*.wav
