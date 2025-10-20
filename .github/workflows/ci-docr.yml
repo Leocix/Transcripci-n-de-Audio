@@ -89,8 +89,18 @@ jobs:
           name: build-minimal-logs
           path: build-minimal.log
 
+      - name: Free space before full build
+        if: true  # Temporarily enabled
+        run: |
+          echo "=== Removing minimal image to free space ==="
+          docker image rm registry.digitalocean.com/${{ secrets.DOCR_REGISTRY }}/${{ secrets.DOCR_REPOSITORY }}:${{ github.sha }}-min || true
+          docker image rm registry.digitalocean.com/${{ secrets.DOCR_REGISTRY }}/${{ secrets.DOCR_REPOSITORY }}:min-latest || true
+          docker system prune -f
+          echo "=== Disk space after cleanup ==="
+          df -h
+
       - name: (Optional) Build full image (heavy deps) and capture logs
-        if: false  # Disabled by default due to disk space limitations on GitHub runners
+        if: true  # Temporarily enabled to build updated full image with file fix
         run: |
           set -o pipefail
           REG=registry.digitalocean.com/$DOCR_REGISTRY
@@ -117,7 +127,7 @@ jobs:
           done
 
       - name: Upload full build logs
-        if: false  # Disabled by default
+        if: true  # Temporarily enabled
         uses: actions/upload-artifact@v4
         with:
           name: build-full-logs
